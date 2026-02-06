@@ -1,0 +1,3 @@
+[submodule "src/lib/textual"]
+	path = src/lib/textual
+	url = https://github.com/Textualize/textual.git
