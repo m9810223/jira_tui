@@ -20,7 +20,8 @@ class DateEditState:
 
     mode: str  # 'start' | 'due'
     cursor_day: int
-    node: 'TreeNode[JiraNodeData]'
+    node: "TreeNode[JiraNodeData]"
+    continuous: bool = False
 
 
 class DateEditController:
@@ -35,7 +36,7 @@ class DateEditController:
         return self._state is not None
 
     @property
-    def current_node(self) -> 'TreeNode[JiraNodeData] | None':
+    def current_node(self) -> "TreeNode[JiraNodeData] | None":
         return self._state.node if self._state else None
 
     @property
@@ -46,15 +47,31 @@ class DateEditController:
     def cursor_day(self) -> int:
         return self._state.cursor_day if self._state else 0
 
+    @property
+    def is_continuous(self) -> bool:
+        """是否為連續編輯模式"""
+        return self._state.continuous if self._state else False
+
     def start(
         self,
         *,
         mode: str,
-        node: 'TreeNode[JiraNodeData]',
+        node: "TreeNode[JiraNodeData]",
         scroll_offset: int,
-        allowed_types: tuple['JiraNodeType', ...],
+        allowed_types: tuple["JiraNodeType", ...],
+        continuous: bool = False,
+        initial_cursor_day: int | None = None,
     ) -> bool:
-        """開始編輯模式，回傳是否成功"""
+        """開始編輯模式，回傳是否成功
+
+        Args:
+            mode: 編輯模式 ('start' | 'due')
+            node: 要編輯的節點
+            scroll_offset: timeline 捲動偏移量
+            allowed_types: 允許編輯的節點類型
+            continuous: 是否為連續編輯模式
+            initial_cursor_day: 指定的初始游標位置（用於連續模式保持位置）
+        """
         data = node.data
         if data is None or data.issue is None:
             return False
@@ -62,18 +79,30 @@ class DateEditController:
             return False
 
         # 計算游標初始位置
-        base_date = self._timeline.get_base_date()
-        if mode == 'start' and data.issue.fields.start_date:
-            target = data.issue.fields.start_date.replace(tzinfo=None)
-        elif mode == 'due' and data.issue.fields.duedate:
-            target = data.issue.fields.duedate.replace(tzinfo=None)
+        if initial_cursor_day is not None:
+            # 使用指定的游標位置（連續模式）
+            cursor_day = max(
+                0, min(self._timeline.visible_days - 1, initial_cursor_day)
+            )
         else:
-            target = self._timeline.get_today()
+            # 根據現有日期或今天計算位置
+            base_date = self._timeline.get_base_date()
+            if mode == 'start' and data.issue.fields.start_date:
+                target = data.issue.fields.start_date.replace(tzinfo=None)
+            elif mode == 'due' and data.issue.fields.duedate:
+                target = data.issue.fields.duedate.replace(tzinfo=None)
+            else:
+                target = self._timeline.get_today()
 
-        days_from_base = (target - base_date).days - scroll_offset
-        cursor_day = max(0, min(self._timeline.visible_days - 1, days_from_base))
+            days_from_base = (target - base_date).days - scroll_offset
+            cursor_day = max(0, min(self._timeline.visible_days - 1, days_from_base))
 
-        self._state = DateEditState(mode=mode, cursor_day=cursor_day, node=node)
+        self._state = DateEditState(
+            mode=mode,
+            cursor_day=cursor_day,
+            node=node,
+            continuous=continuous,
+        )
         return True
 
     def cancel(self) -> None:
@@ -109,7 +138,9 @@ class DateEditController:
 
         # 計算選擇的日期
         base_date = self._timeline.get_base_date()
-        selected_date = base_date + timedelta(days=scroll_offset + self._state.cursor_day)
+        selected_date = base_date + timedelta(
+            days=scroll_offset + self._state.cursor_day
+        )
 
         issue_key = data.issue.key
         field = 'start_date' if self._state.mode == 'start' else 'duedate'
@@ -144,3 +175,72 @@ class DateEditController:
 
         self._state = None
         return (issue_key, field)
+
+    def confirm_and_switch_to_due(
+        self, scroll_offset: int
+    ) -> tuple[str, str, str] | None:
+        """確認 start date 編輯並切換到 due date 模式
+
+        保持 cursor_day 不變，只切換 mode 為 'due'。
+        回傳 (issue_key, field, date_str) 或 None
+        """
+        if not self._state or self._state.mode != "start":
+            return None
+
+        data = self._state.node.data
+        if not data or not data.issue:
+            return None
+
+        # 計算選擇的日期
+        base_date = self._timeline.get_base_date()
+        selected_date = base_date + timedelta(
+            days=scroll_offset + self._state.cursor_day
+        )
+
+        issue_key = data.issue.key
+        field = "start_date"
+        date_str = selected_date.strftime("%Y-%m-%d")
+
+        # 更新本地資料
+        data.issue.fields.start_date = selected_date
+
+        # 切換到 due 模式，保持 cursor_day 和 continuous
+        self._state.mode = "due"
+
+        return (issue_key, field, date_str)
+
+    def confirm_and_switch_to_node(
+        self,
+        scroll_offset: int,
+        next_node: "TreeNode[JiraNodeData]",
+    ) -> tuple[str, str, str] | None:
+        """確認 due date 編輯並切換到下一個節點的 start date 模式
+
+        保持 cursor_day 不變，切換到新節點並重設 mode 為 'start'。
+        回傳 (issue_key, field, date_str) 或 None
+        """
+        if not self._state or self._state.mode != "due":
+            return None
+
+        data = self._state.node.data
+        if not data or not data.issue:
+            return None
+
+        # 計算選擇的日期
+        base_date = self._timeline.get_base_date()
+        selected_date = base_date + timedelta(
+            days=scroll_offset + self._state.cursor_day
+        )
+
+        issue_key = data.issue.key
+        field = "duedate"
+        date_str = selected_date.strftime("%Y-%m-%d")
+
+        # 更新本地資料
+        data.issue.fields.duedate = selected_date
+
+        # 切換到新節點的 start 模式，保持 cursor_day 和 continuous
+        self._state.node = next_node
+        self._state.mode = "start"
+
+        return (issue_key, field, date_str)
