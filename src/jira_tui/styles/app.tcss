@@ -1,0 +1,147 @@
+/* Jira Dashboard 主要樣式 */
+
+Screen {
+    layout: grid;
+    grid-size: 1;
+}
+
+TabbedContent {
+    height: 100%;
+}
+
+/* API Tab 設定表單 */
+#config-form {
+    padding: 1 2;
+    height: auto;
+}
+
+#config-form Label {
+    margin-top: 1;
+}
+
+#config-form Input {
+    margin-bottom: 1;
+    border: solid $primary;
+}
+
+#verify-btn {
+    margin-top: 1;
+    width: auto;
+}
+
+#api-status {
+    margin-top: 1;
+    height: auto;
+}
+
+#api-status.success {
+    color: $success;
+}
+
+#api-status.error {
+    color: $error;
+}
+
+/* JQL Tab */
+#jql-bar {
+    height: auto;
+    padding: 0 1;
+}
+
+#jql-input {
+    height: 1;
+    max-height: 10;
+    width: 1fr;
+    border: none;
+    background: $primary;
+}
+
+#search-btn {
+    width: auto;
+    height: 1;
+    margin-left: 1;
+    border: none;
+    padding: 0;
+}
+
+#jql-loading {
+    height: 1fr;
+}
+
+#results-table {
+    height: 1fr;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+#results-status {
+    height: auto;
+    padding: 0 1;
+    text-align: center;
+    color: $text-muted;
+}
+
+/* My Issues Tab */
+#assignee-bar {
+    height: 1;
+    padding: 0 1;
+    align: left middle;
+}
+
+#assignee-label {
+    width: auto;
+    height: 1;
+}
+
+#assignee-value {
+    width: 1fr;
+    height: 1;
+    padding: 0 1;
+    background: $primary;
+}
+
+#change-assignee-btn {
+    width: auto;
+    min-width: 8;
+    height: 1;
+    margin-left: 1;
+    border: none;
+    padding: 0;
+}
+
+.hidden {
+    display: none;
+}
+
+#breadcrumb {
+    height: 1;
+    padding: 0 1;
+    background: $surface;
+    color: $text-muted;
+}
+
+#timeline-header {
+    height: 1;
+    overflow: hidden;
+}
+
+#my-issues-loading {
+    height: 1fr;
+}
+
+#my-issues-container {
+    height: 1fr;
+    overflow-y: auto;
+}
+
+#my-issues-container DataTable {
+    height: auto;
+    max-height: 15;
+}
+
+.table-label {
+    height: auto;
+    padding: 0 1;
+    color: $text-muted;
+    text-style: bold;
+}
