@@ -198,6 +198,7 @@ class JiraTree(Tree[JiraNodeData]):
 
     BINDINGS = [
         Binding('space', 'toggle_node', '展開/收合', show=False),
+        Binding('ctrl+s', 'edit_dates_continuous', '連續編輯日期', show=False),
     ]
 
     DEFAULT_CSS = """
@@ -766,6 +767,19 @@ class JiraTree(Tree[JiraNodeData]):
         ):
             self._invalidate()
 
+    def action_edit_dates_continuous(self) -> None:
+        """進入連續編輯日期模式（start → due → 下一個 issue）"""
+        if self.cursor_node is None:
+            return
+        if self._date_edit.start(
+            mode="start",
+            node=self.cursor_node,
+            scroll_offset=self._scroll_offset,
+            allowed_types=(JiraNodeType.ISSUE, JiraNodeType.EXTERNAL_EPIC),
+            continuous=True,
+        ):
+            self._invalidate()
+
     def action_select_cursor(self) -> None:
         """選擇當前節點（或確認日期編輯/移動）"""
         if self._date_edit.is_active:
@@ -777,11 +791,70 @@ class JiraTree(Tree[JiraNodeData]):
 
     def _confirm_edit(self) -> None:
         """確認日期編輯"""
-        result = self._date_edit.confirm(self._scroll_offset)
-        if result:
-            issue_key, field, date_str = result
-            self._invalidate()
-            self.post_message(self.UpdateIssueDate(issue_key, field, date_str))
+        if self._date_edit.is_continuous:
+            self._confirm_edit_continuous()
+        else:
+            result = self._date_edit.confirm(self._scroll_offset)
+            if result:
+                issue_key, field, date_str = result
+                self._invalidate()
+                self.post_message(self.UpdateIssueDate(issue_key, field, date_str))
+
+    def _confirm_edit_continuous(self) -> None:
+        """連續模式下確認編輯"""
+        if self._date_edit.mode == "start":
+            # 確認 start date，切換到 due date
+            result = self._date_edit.confirm_and_switch_to_due(self._scroll_offset)
+            if result:
+                issue_key, field, date_str = result
+                self._invalidate()
+                self.post_message(self.UpdateIssueDate(issue_key, field, date_str))
+        else:
+            # 確認 due date，尋找下一個 sibling issue
+            next_node = self._get_next_sibling_issue(self._date_edit.current_node)
+            if next_node:
+                result = self._date_edit.confirm_and_switch_to_node(
+                    self._scroll_offset,
+                    next_node,
+                )
+                if result:
+                    issue_key, field, date_str = result
+                    self.select_node(next_node)  # 移動 tree cursor
+                    self._invalidate()
+                    self.post_message(self.UpdateIssueDate(issue_key, field, date_str))
+            else:
+                # 沒有下一個，結束連續模式
+                result = self._date_edit.confirm(self._scroll_offset)
+                if result:
+                    issue_key, field, date_str = result
+                    self._invalidate()
+                    self.post_message(self.UpdateIssueDate(issue_key, field, date_str))
+                self.app.notify("已完成該 issue 下所有 tasks 的日期設定", timeout=3)
+
+    def _get_next_sibling_issue(
+        self,
+        node: TreeNode[JiraNodeData] | None,
+    ) -> TreeNode[JiraNodeData] | None:
+        """取得同 parent 下的下一個 ISSUE 節點"""
+        if node is None or node.parent is None:
+            return None
+
+        siblings = list(node.parent.children)
+        try:
+            current_idx = siblings.index(node)
+        except ValueError:
+            return None
+
+        # 從當前節點之後尋找下一個 ISSUE
+        for sibling in siblings[current_idx + 1 :]:
+            data = sibling.data
+            if data and data.node_type in (
+                JiraNodeType.ISSUE,
+                JiraNodeType.EXTERNAL_EPIC,
+            ):
+                return sibling
+
+        return None
 
     def _clear_date(self) -> None:
         """清除日期"""
