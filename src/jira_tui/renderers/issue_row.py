@@ -274,13 +274,13 @@ class IssueRowRenderer:
         return f'{d_str}{h_str}{m_str}'
 
     def _append_status(self, result: Text, status: str, style: Style | str = 'dim') -> None:
-        """加入 Status（超過寬度則截斷）"""
+        """加入 Status（超過寬度則截斷，正確處理 CJK 寬度）"""
         if not self._layout.show_status:
             return
         status_width = self._layout.STATUS_WIDTH
-        if len(status) > status_width:
-            status = status[:status_width - 1] + '…'
-        result.append(f' {status:<{status_width}}', style=style)
+        status, cell_len = self._truncate_text(status, status_width)
+        padding = status_width - cell_len
+        result.append(' ' + status + ' ' * padding, style=style)
 
     def _append_date(self, result: Text, dt: datetime | None, style: Style | str = 'dim') -> None:
         """加入日期欄位 (MM/DD 格式)"""
