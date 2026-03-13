@@ -262,18 +262,11 @@ class JiraDashboard(App):
         except Exception as e:
             self.call_from_thread(self.notify, f'變更狀態失敗: {e}', severity='error')
 
-    def _get_summary_width(self) -> int:
-        """取得目前的 summary 寬度"""
-        try:
-            return self.query_one(MyIssuesTab)._layout.summary_width
-        except Exception:
-            return 50
 
     def _update_timeline_width(self) -> None:
         """重新計算並更新 timeline 寬度"""
         new_width = self._calculate_timeline_width(
             console_width=self.size.width,
-            summary_width=self._get_summary_width(),
         )
         if new_width != self.timeline_width:
             self.timeline_width = new_width
@@ -346,10 +339,12 @@ class JiraDashboard(App):
         self,
         *,
         console_width: int,
-        summary_width: int = 50,
     ) -> int:
         """根據 console 寬度計算 timeline 寬度"""
-        layout = TreeLayout(summary_width=summary_width)
+        try:
+            layout = self.query_one(MyIssuesTab)._layout
+        except Exception:
+            layout = TreeLayout()
         # 額外邊距 (scrollbar, borders, TabbedContent, tree indent, etc.)
         extra_margin = 15
         fixed_width = layout.total_fixed_width + extra_margin
@@ -363,7 +358,6 @@ class JiraDashboard(App):
         """視窗大小改變時更新 timeline 寬度"""
         new_width = self._calculate_timeline_width(
             console_width=self.size.width,
-            summary_width=self._get_summary_width(),
         )
         # 強制更新所有 tree 的 timeline 寬度
         for tree in self.query(JiraTree):

@@ -695,8 +695,7 @@ class JiraTree(Tree[JiraNodeData]):
     def update_timeline_width(self, width: int) -> None:
         """更新 Timeline 寬度"""
         self._timeline.width = width
-        self._tree_lines.clear()
-        self.refresh(layout=True)
+        self._invalidate()
 
     def get_timeline_prefix_width(self) -> int:
         """取得 timeline 欄位前的總寬度（用於 header 對齊）"""
