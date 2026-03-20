@@ -19,3 +19,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/jira_tui"]
+
+[tool.ruff]
+format.quote-style = "single"
