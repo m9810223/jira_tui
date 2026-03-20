@@ -346,6 +346,10 @@ class JiraTree(Tree[JiraNodeData]):
         if data.epics or data.no_epic_issues:
             self._add_epics_group_node(project_node, data)
 
+        # Level 2: Completed Sprints group
+        if data.completed_sprints:
+            self._add_completed_sprints_group_node(project_node, data)
+
         # Level 2: Active Sprints group
         if data.active_sprints:
             self._add_active_sprints_group_node(project_node, data)
@@ -353,10 +357,6 @@ class JiraTree(Tree[JiraNodeData]):
         # Level 2: No Sprint (Backlog)
         if data.no_sprint:
             self._add_no_sprint_node(project_node, data.no_sprint, data.subtask_map)
-
-        # Level 2: Completed Sprints group
-        if data.completed_sprints:
-            self._add_completed_sprints_group_node(project_node, data)
 
     def _add_epics_group_node(
         self,
