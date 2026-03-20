@@ -3,6 +3,8 @@
 import httpx
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+
+from .auth import ProfileStore
 from .models import JiraSearchResult
 from .models import JiraTransition
 from .models import JiraUser
@@ -17,10 +19,38 @@ class Config(BaseSettings):
         env_file_encoding='utf-8',
     )
 
-    host: str =Field(default=...,examples=['https://ccccc.atlassian.net'])
-    user: str =Field(default=...,examples=['xxxxx@ccccc.com'])
-    token: str = Field(default=...)
+    host: str =Field(default='',examples=['https://ccccc.atlassian.net'])
+    user: str =Field(default='',examples=['xxxxx@ccccc.com'])
+    token: str = Field(default='')
     jql: str = Field(default='')
+
+    @property
+    def is_configured(self) -> bool:
+        """是否已有完整設定"""
+        return bool(self.host and self.user and self.token)
+
+
+def load_config() -> 'Config':
+    """建立 Config 實例
+
+    優先順序：
+    1. 環境變數 / .env（pydantic-settings 原生行為）
+    2. ~/.config/jira_tui/profiles.json active profile
+    3. 空值
+    """
+    cfg = Config()
+    if cfg.is_configured:
+        return cfg
+
+    profile = ProfileStore.get_active()
+    if profile is None:
+        return cfg
+    return Config(
+        host=cfg.host or profile.host,
+        user=cfg.user or profile.user,
+        token=cfg.token or profile.token,
+        jql=cfg.jql or profile.jql,
+    )
 
 
 class JiraClient:

@@ -29,6 +29,16 @@ TabbedContent {
     width: auto;
 }
 
+#api-buttons {
+    margin-top: 1;
+    height: auto;
+    align: left middle;
+}
+
+#api-buttons Button {
+    margin-right: 1;
+}
+
 #api-status {
     margin-top: 1;
     height: auto;
@@ -144,4 +154,35 @@ TabbedContent {
     padding: 0 1;
     color: $text-muted;
     text-style: bold;
+}
+
+/* API Tab - Profile 切換列 */
+#profile-bar {
+    height: auto;
+    padding: 0 2;
+    margin-bottom: 1;
+    align: left middle;
+}
+
+.profile-bar-name {
+    width: auto;
+    margin-right: 1;
+    color: $text-muted;
+}
+
+.profile-active-btn {
+    height: 1;
+    min-width: 8;
+    border: none;
+    padding: 0 1;
+    margin-right: 2;
+    color: $success;
+}
+
+.profile-switch-btn {
+    height: 1;
+    min-width: 6;
+    border: none;
+    padding: 0 1;
+    margin-right: 2;
 }
