@@ -12,10 +12,13 @@ from textual.widgets import Footer
 from textual.widgets import TabbedContent
 from textual.widgets import TabPane
 
-from .config import Config
+from .auth import Profile
+from .config import load_config
 from .config import JiraClient
+from .config import load_config
 from .renderers.layout import TreeLayout
 from .renderers.timeline import TimelineRenderer
+from .screens.setup import SetupScreen
 from .tabs.api import ApiTab
 from .tabs.jql import JqlTab
 from .tabs.my_issues import MyIssuesTab
@@ -94,7 +97,7 @@ class JiraDashboard(App):
 
     def __init__(self):
         super().__init__()
-        self.config = Config()
+        self.config = load_config()
         self.myself: dict | None = None
 
     def _get_jira_client(self) -> JiraClient:
@@ -109,6 +112,38 @@ class JiraDashboard(App):
         """App 啟動時初始化"""
         # 計算初始 timeline 寬度
         self._update_timeline_width()
+        # 若無設定，顯示首次設定畫面；否則自動連線
+        if not self.config.is_configured:
+            self.push_screen(SetupScreen(), self._on_setup_done)
+        else:
+            self._auto_connect()
+
+    @work(thread=True)
+    def _auto_connect(self) -> None:
+        """啟動時自動連線（有 profile 時）"""
+        try:
+            api_tab = self.app.query_one(ApiTab)
+            api_tab.verify_connection(silent=True)
+        except Exception:
+            pass
+
+    def _on_setup_done(self, profile: Profile | None) -> None:
+        """SetupScreen dismiss 後的 callback
+
+        Args:
+            profile: 成功儲存的 Profile，或 None（使用者略過）
+        """
+        if profile is None:
+            return
+
+        self.config = load_config()
+        # 觸發自動連線（切換到 API Tab 並執行驗證）
+        try:
+            api_tab = self.query_one(ApiTab)
+            api_tab.on_mount()  # 重新載入欄位值
+            api_tab.verify_connection(silent=True)
+        except Exception:
+            pass
 
     # === JiraTree Message Handlers ===
 
