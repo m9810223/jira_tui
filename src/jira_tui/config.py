@@ -51,6 +51,7 @@ class JiraClient:
         'summary', 'status', 'assignee', 'priority', 'issuetype', 'project',
         'parent', 'created', 'updated', 'duedate', 'customfield_10015', 'customfield_10019', 'customfield_10020',
         'customfield_10033', 'aggregatetimeoriginalestimate', 'timeoriginalestimate',
+        'aggregatetimespent', 'timespent',
     ])
 
     def search_jql(self, jql: str, *, next_page_token: str | None = None) -> JiraSearchResult:

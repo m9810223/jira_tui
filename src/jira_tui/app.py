@@ -38,6 +38,7 @@ class JiraDashboard(App):
         Binding('C', 'collapse_all', '收合/展開全部'),
         Binding('p', 'toggle_sp', '顯示/隱藏 SP'),
         Binding('e', 'toggle_est', '顯示/隱藏 A/TOEst'),
+        Binding('w', 'toggle_spent', '顯示/隱藏 A/Spent'),
         Binding('s', 'toggle_status', '顯示/隱藏 Status'),
         Binding('d', 'toggle_dates', '顯示/隱藏 Dates'),
         Binding('S', 'edit_start_date', '編輯 Start'),
@@ -61,6 +62,7 @@ class JiraDashboard(App):
         'collapse_all',
         'toggle_sp',
         'toggle_est',
+        'toggle_spent',
         'toggle_status',
         'toggle_dates',
         'edit_start_date',
@@ -406,6 +408,18 @@ class JiraDashboard(App):
 
         my_issues_tab = self.query_one(MyIssuesTab)
         my_issues_tab._layout.show_est = not my_issues_tab._layout.show_est
+        # 重繪所有 tree
+        my_issues_tab._update_all_tables_summary_width()
+        # 更新 timeline 寬度
+        self._update_timeline_width()
+
+    def action_toggle_spent(self) -> None:
+        """顯示/隱藏 Time Spent 欄位"""
+        if self.query_one(TabbedContent).active != 'my-issues-tab':
+            return
+
+        my_issues_tab = self.query_one(MyIssuesTab)
+        my_issues_tab._layout.show_spent = not my_issues_tab._layout.show_spent
         # 重繪所有 tree
         my_issues_tab._update_all_tables_summary_width()
         # 更新 timeline 寬度

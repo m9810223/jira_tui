@@ -79,6 +79,7 @@ class IssueRowRenderer:
         self._append_status(result, issue.fields.status.name if issue.fields.status else '', style)
         self._append_sp(result, issue.fields.story_points, style)
         self._append_est(result, issue.fields.aggregate_time_original_estimate, style)
+        self._append_spent(result, issue.fields.aggregate_time_spent, style)
         self._append_date(result, issue.fields.start_date, style)
         self._append_date(result, issue.fields.duedate, style)
 
@@ -131,6 +132,8 @@ class IssueRowRenderer:
             result.append(f' {"SP":<{layout.SP_WIDTH}}', style='bold')
         if layout.show_est:
             result.append(f' {"A/TOEst":<{layout.EST_WIDTH}}', style='bold')
+        if layout.show_spent:
+            result.append(f' {"A/Spent":<{layout.SPENT_WIDTH}}', style='bold')
         if layout.show_dates:
             result.append(f' {"Start":<{layout.DATE_WIDTH}}', style='bold')
             result.append(f' {"Due":<{layout.DATE_WIDTH}}', style='bold')
@@ -257,6 +260,24 @@ class IssueRowRenderer:
         else:
             est_str = ''
         result.append(f' {est_str:>{est_width}}', style=style)
+
+    def _append_spent(
+        self,
+        result: Text,
+        aggregate_time_spent: int | None,
+        style: Style | str = 'dim',
+    ) -> None:
+        """加入 Time Spent"""
+        if not self._layout.show_spent:
+            return
+        spent_width = self._layout.SPENT_WIDTH
+        if aggregate_time_spent:
+            spent_str = self._format_seconds(aggregate_time_spent)
+            if len(spent_str) > spent_width:
+                spent_str = spent_str[:spent_width - 1] + '…'
+        else:
+            spent_str = ''
+        result.append(f' {spent_str:>{spent_width}}', style=style)
 
     def _format_seconds(self, seconds: int) -> str:
         """將秒數轉換成固定格式 _d_h__m (如 1d2h30m)，0 的部分用空格"""

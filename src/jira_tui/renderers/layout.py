@@ -12,6 +12,7 @@ class TreeLayout:
     DATE_WIDTH = 5  # MM/DD 格式
     SP_WIDTH = 5    # Story Points 寬度 (例如 "8.000")
     EST_WIDTH = 7   # Aggregate Time Original Estimate 寬度 (例如 "1d2h30m")
+    SPENT_WIDTH = 7  # Aggregate Time Spent 寬度 (例如 "1d2h30m")
 
     # Tree 結構常數
     MAX_DEPTH = 5
@@ -25,12 +26,14 @@ class TreeLayout:
         show_dates: bool = True,
         show_sp: bool = True,
         show_est: bool = True,
+        show_spent: bool = True,
     ):
         self._summary_width = summary_width
         self._show_status = show_status
         self._show_dates = show_dates
         self._show_sp = show_sp
         self._show_est = show_est
+        self._show_spent = show_spent
 
     @property
     def show_status(self) -> bool:
@@ -65,6 +68,14 @@ class TreeLayout:
         self._show_est = value
 
     @property
+    def show_spent(self) -> bool:
+        return self._show_spent
+
+    @show_spent.setter
+    def show_spent(self, value: bool) -> None:
+        self._show_spent = value
+
+    @property
     def summary_width(self) -> int:
         return self._summary_width
 
@@ -89,6 +100,8 @@ class TreeLayout:
             width += 1 + self.SP_WIDTH
         if self._show_est:
             width += 1 + self.EST_WIDTH
+        if self._show_spent:
+            width += 1 + self.SPENT_WIDTH
         if self._show_status:
             width += 1 + self.STATUS_WIDTH
         if self._show_dates:

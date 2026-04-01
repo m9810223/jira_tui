@@ -112,6 +112,12 @@ class JiraIssueFields(JiraModel):
     time_original_estimate: int | None = Field(
         default=None, validation_alias='timeoriginalestimate'
     )
+    aggregate_time_spent: int | None = Field(
+        default=None, validation_alias='aggregatetimespent'
+    )
+    time_spent: int | None = Field(
+        default=None, validation_alias='timespent'
+    )
 
 
 class JiraIssue(JiraModel):
