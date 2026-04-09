@@ -14,6 +14,9 @@ from jira_tui.tabs.my_issues import MyIssuesTab
 from jira_tui.widgets.tree import JiraTree
 from jira_tui.widgets.worklog_day_grid import WorklogDayGrid
 from jira_tui.worklog import WorklogEntry
+from textual.geometry import Region
+from textual.geometry import Size
+from textual.geometry import Spacing
 from textual.widgets import TabbedContent
 
 
@@ -174,6 +177,26 @@ class WorklogTestApp(JiraDashboard):
         return self._test_client
 
 
+class MeasuredWorklogDayGrid(WorklogDayGrid):
+    def __init__(self, *, content_width: int, size_width: int, gutter_top: int) -> None:
+        super().__init__()
+        self._content_region = Region(0, 0, content_width, 24)
+        self._size = Size(size_width, 24)
+        self._gutter = Spacing(gutter_top, 0, 0, 0)
+
+    @property
+    def content_region(self) -> Region:
+        return self._content_region
+
+    @property
+    def size(self) -> Size:
+        return self._size
+
+    @property
+    def gutter(self) -> Spacing:
+        return self._gutter
+
+
 def make_tree_issue(
     key: str,
     summary: str,
@@ -220,7 +243,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(date(2026, 4, 9), tab.selected_day)
             self.assertEqual(1, len(grid.worklog_entries))
 
-    async def test_existing_worklog_line_shows_time_range_and_duration(self) -> None:
+    async def test_existing_worklog_first_line_shows_issue_key_and_summary(self) -> None:
         async with self.app.run_test() as pilot:
             self.app.query_one(TabbedContent).active = 'worklog-tab'
             tab = self.app.query_one(WorklogTab)
@@ -230,20 +253,56 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
 
             grid = tab.query_one(WorklogDayGrid)
             rendered = grid._render_slot_line(2, 80).plain
-            self.assertIn('09:00-10:00 (1h)', rendered)
             self.assertIn('PROJ-1', rendered)
+            self.assertIn('Alpha task', rendered)
 
-    async def test_existing_worklog_second_line_shows_comment_text(self) -> None:
-        async with self.app.run_test() as pilot:
-            self.app.query_one(TabbedContent).active = 'worklog-tab'
-            tab = self.app.query_one(WorklogTab)
-            tab.set_selected_day(date(2026, 4, 9))
-            tab.refresh_day()
-            await pilot.pause()
+    def test_one_hour_worklog_does_not_show_second_line_comment(self) -> None:
+        tz = ZoneInfo('Asia/Taipei')
+        entry = WorklogEntry(
+            worklog_id='w1',
+            issue_key='PROJ-1',
+            issue_summary='Alpha task',
+            author_account_id='me',
+            started=datetime(2026, 4, 9, 9, 0, tzinfo=tz),
+            time_spent_seconds=3600,
+            comment_text='Focused implementation',
+        )
+        grid = WorklogDayGrid()
+        grid.set_worklog_entries([entry])
+        rendered = grid._render_slot_line(3, 80).plain.strip()
+        self.assertEqual('', rendered)
 
-            grid = tab.query_one(WorklogDayGrid)
-            rendered = grid._render_slot_line(3, 80).plain
-            self.assertIn('Focused implementation', rendered)
+    def test_two_hour_worklog_second_line_shows_comment_text(self) -> None:
+        tz = ZoneInfo('Asia/Taipei')
+        entry = WorklogEntry(
+            worklog_id='w1',
+            issue_key='PROJ-1',
+            issue_summary='Alpha task',
+            author_account_id='me',
+            started=datetime(2026, 4, 9, 9, 0, tzinfo=tz),
+            time_spent_seconds=7200,
+            comment_text='Focused implementation',
+        )
+        grid = WorklogDayGrid()
+        grid.set_worklog_entries([entry])
+        rendered = grid._render_slot_line(3, 80).plain
+        self.assertIn('Focused implementation', rendered)
+
+    def test_existing_worklog_line_is_truncated_to_grid_width(self) -> None:
+        tz = ZoneInfo('Asia/Taipei')
+        entry = WorklogEntry(
+            worklog_id='w1',
+            issue_key='DP-834',
+            issue_summary='嘗試 rebase 或其他做法 e.g. 重寫, 修改其他沒改到的',
+            author_account_id='me',
+            started=datetime(2026, 4, 9, 11, 0, tzinfo=tz),
+            time_spent_seconds=3600,
+            comment_text='comment',
+        )
+        grid = WorklogDayGrid()
+        grid.set_worklog_entries([entry])
+        rendered = grid._render_slot_line(6, 24)
+        self.assertLessEqual(rendered.cell_len, 24)
 
     def test_adjacent_existing_worklogs_use_different_card_styles(self) -> None:
         tz = ZoneInfo('Asia/Taipei')
@@ -279,6 +338,15 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(grid._entry_style(first_entry), grid._entry_style(second_entry))
         self.assertEqual(grid._entry_style(first_entry), grid._entry_style(third_entry))
 
+    def test_grid_uses_content_width_for_rendered_lines(self) -> None:
+        grid = MeasuredWorklogDayGrid(content_width=50, size_width=52, gutter_top=1)
+        self.assertEqual(50, grid._render_width())
+
+    def test_grid_slot_mapping_accounts_for_top_gutter(self) -> None:
+        grid = MeasuredWorklogDayGrid(content_width=50, size_width=52, gutter_top=1)
+        self.assertIsNone(grid._slot_from_y(0))
+        self.assertEqual(0, grid._slot_from_y(1))
+
     async def test_worklog_day_navigation_actions_change_selected_day(self) -> None:
         async with self.app.run_test() as pilot:
             self.app.query_one(TabbedContent).active = 'worklog-tab'
@@ -306,7 +374,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
 
             grid = tab.query_one(WorklogDayGrid)
-            self.assertEqual((6, 9), grid.draft_slots)
+            self.assertEqual((5, 8), grid.draft_slots)
 
     async def test_submit_worklog_uses_selected_subtask_and_message(self) -> None:
         async with self.app.run_test() as pilot:
@@ -338,7 +406,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             tab.refresh_day()
             await pilot.pause()
 
-            await pilot.click('#worklog-day-grid', offset=(2, 2))
+            await pilot.click('#worklog-day-grid', offset=(2, 3))
             await pilot.pause()
 
             self.assertEqual('WorklogEditorModal', self.app.screen_stack[-1].__class__.__name__)
