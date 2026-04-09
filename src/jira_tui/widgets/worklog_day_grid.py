@@ -27,12 +27,20 @@ class WorklogDayGrid(Static):
             self.end_slot = end_slot
             super().__init__()
 
-    def __init__(self, *args, **kwargs):
+    class EntrySelected(Message):
+        """Emitted when an existing worklog entry is selected."""
+
+        def __init__(self, entry: WorklogEntry):
+            self.entry = entry
+            super().__init__()
+
+    def __init__(self, *args, allow_entry_selection: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
         self.worklog_entries: list[WorklogEntry] = []
         self.draft_slots: tuple[int, int] | None = None
         self._drag_anchor_slot: int | None = None
         self._entry_style_map: dict[str, str] = {}
+        self._allow_entry_selection = allow_entry_selection
         self.can_focus = True
 
     def set_worklog_entries(self, entries: list[WorklogEntry]) -> None:
@@ -128,6 +136,11 @@ class WorklogDayGrid(Static):
     def on_mouse_down(self, event: events.MouseDown) -> None:
         slot = self._slot_from_y(event.y)
         if slot is None:
+            return
+        entry = self._entry_for_slot(slot)
+        if entry is not None and self._allow_entry_selection:
+            self.post_message(self.EntrySelected(entry))
+            event.stop()
             return
         self._drag_anchor_slot = slot
         self.set_draft_slots(slot, slot + 1)

@@ -1,8 +1,10 @@
 """JiraTree Widget"""
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from enum import auto
+from zoneinfo import ZoneInfo
 
 from rich.style import Style
 from rich.text import Text
@@ -15,9 +17,13 @@ from ..controllers.date_edit import DateEditController
 from ..controllers.move import MoveController
 from ..models import JiraIssue
 from ..models import JiraSprint
+from ..screens.worklog_editor import WorklogDeleteResult
+from ..screens.worklog_editor import WorklogEditorModal
+from ..screens.worklog_editor import WorklogEditorResult
 from ..renderers.issue_row import IssueRowRenderer
 from ..renderers.layout import TreeLayout
 from ..renderers.timeline import TimelineRenderer
+from ..worklog import clamp_remaining_estimate
 
 
 class JiraNodeType(Enum):
@@ -199,6 +205,7 @@ class JiraTree(Tree[JiraNodeData]):
     BINDINGS = [
         Binding('space', 'toggle_node', '展開/收合', show=False),
         Binding('ctrl+s', 'edit_dates_continuous', '連續編輯日期', show=False),
+        Binding('l', 'add_worklog', 'Add Worklog'),
     ]
 
     DEFAULT_CSS = """
@@ -256,6 +263,24 @@ class JiraTree(Tree[JiraNodeData]):
             self.issue_key = issue_key
             self.transition_id = transition_id
             self.new_status_name = new_status_name
+            super().__init__()
+
+    class AddIssueWorklog(Message):
+        """請求新增 issue worklog。"""
+
+        def __init__(
+            self,
+            issue_key: str,
+            started: datetime,
+            time_spent_seconds: int,
+            comment_text: str,
+            remaining_estimate_seconds: int | None,
+        ):
+            self.issue_key = issue_key
+            self.started = started
+            self.time_spent_seconds = time_spent_seconds
+            self.comment_text = comment_text
+            self.remaining_estimate_seconds = remaining_estimate_seconds
             super().__init__()
 
     def __init__(
@@ -1088,3 +1113,62 @@ class JiraTree(Tree[JiraNodeData]):
             result.transition_id,
             result.new_status_name,
         ))
+
+    def action_add_worklog(self) -> None:
+        """在 subtask 節點上開啟 quick add worklog modal。"""
+        if self.cursor_node is None:
+            return
+        data = self.cursor_node.data
+        if data is None or data.issue is None:
+            return
+        self._open_add_worklog_modal(data.issue)
+
+    def _open_add_worklog_modal(self, issue: JiraIssue) -> None:
+        """為指定 subtask issue 開啟 quick add worklog modal。"""
+        if issue is None:
+            return
+
+        issue_type = issue.fields.issuetype.name if issue.fields.issuetype else ''
+        if issue_type not in ('Sub-task', 'Subtask'):
+            self.app.notify('Only subtasks support quick add worklog here.', severity='warning')
+            return
+
+        myself = getattr(self.app, 'myself', None)
+        timezone_name = myself.get('timeZone') if isinstance(myself, dict) else 'Asia/Taipei'
+        try:
+            timezone = ZoneInfo(timezone_name or 'Asia/Taipei')
+        except Exception:
+            timezone = ZoneInfo('Asia/Taipei')
+
+        self.app.push_screen(
+            WorklogEditorModal(
+                issue_key=issue.key,
+                issue_summary=issue.fields.summary,
+                selected_day=datetime.now(timezone).date(),
+                timezone=timezone,
+                existing_entries=[],
+            ),
+            self._on_worklog_add_complete,
+        )
+
+    def _on_worklog_add_complete(
+        self,
+        result: WorklogEditorResult | WorklogDeleteResult | None,
+    ) -> None:
+        if result is None or isinstance(result, WorklogDeleteResult):
+            return
+        if self.cursor_node is None:
+            return
+        data = self.cursor_node.data
+        if data is None or data.issue is None:
+            return
+        issue = data.issue
+        self.post_message(
+            self.AddIssueWorklog(
+                issue.key,
+                result.started,
+                result.time_spent_seconds,
+                result.comment_text,
+                clamp_remaining_estimate(issue.fields.time_estimate, result.time_spent_seconds),
+            )
+        )

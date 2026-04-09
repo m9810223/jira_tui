@@ -102,7 +102,7 @@ class JiraWorklog(JiraModel):
     author: JiraWorklogAuthor | None = None
     started: datetime
     time_spent_seconds: int = 0
-    comment: dict | None = None
+    comment: dict | str | None = None
 
 
 class JiraWorklogPage(JiraModel):
