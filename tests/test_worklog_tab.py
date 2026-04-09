@@ -9,6 +9,7 @@ from jira_tui.models import JiraIssue
 from jira_tui.models import JiraWorklog
 from jira_tui.tabs.worklog import WorklogTab
 from jira_tui.widgets.worklog_day_grid import WorklogDayGrid
+from jira_tui.worklog import WorklogEntry
 from textual.widgets import TabbedContent
 
 
@@ -43,34 +44,41 @@ class FakeJiraClient:
             make_issue('PROJ-1', 'Alpha task', remaining_seconds=3600, spent_seconds=0),
             make_issue('PROJ-2', 'Beta bugfix', remaining_seconds=None, spent_seconds=1800),
         ]
-        self.day_worklog_issues = [self.active_sprint_issues[0]]
-        self.issue_worklogs = {
-            'PROJ-1': [
-                JiraWorklog.model_validate(
-                    {
-                        'id': 'w1',
-                        'author': {'accountId': 'me', 'displayName': 'Test User'},
-                        'started': '2026-04-09T09:00:00.000+0800',
-                        'timeSpentSeconds': 3600,
-                        'comment': {
-                            'type': 'doc',
-                            'version': 1,
-                            'content': [
+        self.day_worklog_issues = [
+            JiraIssue.model_validate(
+                {
+                    'key': 'PROJ-1',
+                    'fields': {
+                        'summary': 'Alpha task',
+                        'worklog': {
+                            'worklogs': [
                                 {
-                                    'type': 'paragraph',
-                                    'content': [
-                                        {
-                                            'type': 'text',
-                                            'text': 'Focused implementation',
-                                        }
-                                    ],
+                                    'id': 'w1',
+                                    'author': {'accountId': 'me', 'displayName': 'Test User'},
+                                    'started': '2026-04-09T09:00:00.000+0800',
+                                    'timeSpentSeconds': 3600,
+                                    'comment': {
+                                        'type': 'doc',
+                                        'version': 1,
+                                        'content': [
+                                            {
+                                                'type': 'paragraph',
+                                                'content': [
+                                                    {
+                                                        'type': 'text',
+                                                        'text': 'Focused implementation',
+                                                    }
+                                                ],
+                                            }
+                                        ],
+                                    },
                                 }
-                            ],
+                            ]
                         },
-                    }
-                )
-            ]
-        }
+                    },
+                }
+            )
+        ]
         self.added_worklogs: list[dict] = []
 
     def get_myself(self) -> dict:
@@ -85,7 +93,7 @@ class FakeJiraClient:
         return []
 
     def get_issue_worklogs(self, issue_key: str) -> list[JiraWorklog]:
-        return self.issue_worklogs.get(issue_key, [])
+        raise AssertionError('day view should use embedded worklogs from search results')
 
     def add_issue_worklog(
         self,
@@ -168,6 +176,40 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             grid = tab.query_one(WorklogDayGrid)
             rendered = grid._render_slot_line(3, 80).plain
             self.assertIn('Focused implementation', rendered)
+
+    def test_adjacent_existing_worklogs_use_different_card_styles(self) -> None:
+        tz = ZoneInfo('Asia/Taipei')
+        first_entry = WorklogEntry(
+            worklog_id='w1',
+            issue_key='DP-833',
+            issue_summary='Morning work',
+            author_account_id='me',
+            started=datetime(2026, 4, 9, 9, 0, tzinfo=tz),
+            time_spent_seconds=2 * 3600,
+            comment_text='first block',
+        )
+        second_entry = WorklogEntry(
+            worklog_id='w2',
+            issue_key='DP-834',
+            issue_summary='Hand-off work',
+            author_account_id='me',
+            started=datetime(2026, 4, 9, 11, 0, tzinfo=tz),
+            time_spent_seconds=3600,
+            comment_text='second block',
+        )
+        third_entry = WorklogEntry(
+            worklog_id='w3',
+            issue_key='DP-835',
+            issue_summary='Afternoon work',
+            author_account_id='me',
+            started=datetime(2026, 4, 9, 13, 0, tzinfo=tz),
+            time_spent_seconds=3600,
+            comment_text='third block',
+        )
+        grid = WorklogDayGrid()
+        grid.set_worklog_entries([first_entry, second_entry, third_entry])
+        self.assertNotEqual(grid._entry_style(first_entry), grid._entry_style(second_entry))
+        self.assertEqual(grid._entry_style(first_entry), grid._entry_style(third_entry))
 
     async def test_worklog_day_navigation_actions_change_selected_day(self) -> None:
         async with self.app.run_test() as pilot:
