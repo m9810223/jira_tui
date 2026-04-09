@@ -66,8 +66,12 @@ class WorklogDayGrid(Static):
         self._pending_entry_selection = None
         self.refresh()
 
+    def _render_width(self) -> int:
+        content_width = self.content_region.width or self.size.width
+        return max(content_width, 24)
+
     def render(self) -> Text:
-        width = max(self.size.width, 24)
+        width = self._render_width()
         lines: list[Text] = []
         for slot in range(SLOTS_PER_DAY):
             lines.append(self._render_slot_line(slot, width))
@@ -91,7 +95,9 @@ class WorklogDayGrid(Static):
         entry = self._entry_for_slot(slot)
         if entry is not None:
             text = self._format_entry_line(entry, slot)
-            return Text(text[:width].ljust(width), style=self._entry_style(entry))
+            line = Text(text, style=self._entry_style(entry))
+            line.truncate(width, overflow='ellipsis', pad=True)
+            return line
 
         return Text(' '.ljust(width))
 
@@ -107,10 +113,7 @@ class WorklogDayGrid(Static):
         return None
 
     def _format_entry_label(self, entry: WorklogEntry) -> str:
-        start_label = entry.started.strftime('%H:%M')
-        end_label = entry.ended.strftime('%H:%M')
-        duration_label = format_duration_label(entry.time_spent_seconds)
-        return f' {start_label}-{end_label} ({duration_label}) {entry.issue_key} {entry.issue_summary}'
+        return f' {entry.issue_key} {entry.issue_summary}'
 
     def _entry_identifier(self, entry: WorklogEntry) -> str:
         return entry.worklog_id or f'{entry.issue_key}:{entry.started.isoformat()}'
@@ -121,19 +124,18 @@ class WorklogDayGrid(Static):
     def _format_entry_line(self, entry: WorklogEntry, slot: int) -> str:
         start_slot = self._slot_index_for_entry(entry)
         slot_offset = slot - start_slot
+        duration_slots = max(1, entry.time_spent_seconds // (30 * 60))
         if slot_offset == 0:
             return self._format_entry_label(entry)
-        if slot_offset == 1:
+        if slot_offset == 1 and duration_slots >= 4:
             if entry.comment_text:
                 return f' {entry.comment_text}'
-            return f' {entry.issue_key}'
-        if slot_offset == 2:
-            return f' {entry.issue_summary}'
         return ' '
 
     def _slot_from_y(self, y: int) -> int | None:
-        if 0 <= y < SLOTS_PER_DAY:
-            return y
+        content_y = y - self.gutter.top
+        if 0 <= content_y < SLOTS_PER_DAY:
+            return content_y
         return None
 
     def on_mouse_down(self, event: events.MouseDown) -> None:

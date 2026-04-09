@@ -315,7 +315,7 @@ class WorklogTab(JiraClientMixin, Vertical):
 
     def _update_time_axis(self) -> None:
         axis = self.query_one('#worklog-time-axis', Static)
-        labels = []
+        labels = ['']
         total_slots = (DAY_END_HOUR - DAY_START_HOUR) * 60 // SLOT_MINUTES
         for slot in range(total_slots):
             hour = DAY_START_HOUR + (slot * SLOT_MINUTES) // 60

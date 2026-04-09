@@ -58,6 +58,14 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
     #worklog-editor-header {
         height: auto;
         margin-bottom: 1;
+        width: 100%;
+        align: left middle;
+    }
+
+    #worklog-editor-date {
+        width: 1fr;
+        content-align: right middle;
+        color: $text-muted;
     }
 
     #worklog-editor-body {
@@ -66,11 +74,13 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
 
     #worklog-editor-axis {
         width: 8;
+        height: 24;
         color: $text-muted;
     }
 
     #worklog-editor-grid {
         width: 1fr;
+        height: 24;
         border: round $primary-background;
     }
 
@@ -127,7 +137,7 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
         with Vertical(id='worklog-editor-dialog'):
             with Horizontal(id='worklog-editor-header'):
                 yield Label(f'{title}: {self._issue_key}')
-                yield Static(self._selected_day.strftime('%Y-%m-%d'))
+                yield Static(self._selected_day.strftime('%Y-%m-%d'), id='worklog-editor-date')
             with Horizontal(id='worklog-editor-body'):
                 yield Static(self._build_axis_labels(), id='worklog-editor-axis')
                 yield WorklogDayGrid(
@@ -159,7 +169,7 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
         self.query_one('#worklog-editor-comment', BlurTextArea).focus()
 
     def _build_axis_labels(self) -> str:
-        labels = []
+        labels = ['']
         hour = 8
         minute = 0
         for _ in range(24):
