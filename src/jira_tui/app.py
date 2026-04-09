@@ -19,6 +19,7 @@ from .renderers.timeline import TimelineRenderer
 from .tabs.api import ApiTab
 from .tabs.jql import JqlTab
 from .tabs.my_issues import MyIssuesTab
+from .tabs.worklog import WorklogTab
 from .widgets.tree import JiraTree
 
 
@@ -47,6 +48,9 @@ class JiraDashboard(App):
         Binding('E', 'edit_time_estimate', '編輯 Time Est'),
         Binding('m', 'move_mark', '移動 Issue'),
         Binding('T', 'edit_status', '編輯 Status'),
+        Binding('alt+left', 'worklog_prev_day', 'Worklog 前一天'),
+        Binding('alt+right', 'worklog_next_day', 'Worklog 下一天'),
+        Binding('alt+t', 'worklog_today', 'Worklog 今天'),
     ]
 
     timeline_scroll_offset: reactive[int] = reactive(0)
@@ -72,12 +76,22 @@ class JiraDashboard(App):
         'move_mark',
         'edit_status',
     }
+    _WORKLOG_TAB_ACTIONS = {
+        'worklog_prev_day',
+        'worklog_next_day',
+        'worklog_today',
+    }
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         """檢查 action 是否可用"""
         if action in self._ISSUES_TAB_ACTIONS:
             try:
                 return self.query_one(TabbedContent).active == 'my-issues-tab'
+            except Exception:
+                return False
+        if action in self._WORKLOG_TAB_ACTIONS:
+            try:
+                return self.query_one(TabbedContent).active == 'worklog-tab'
             except Exception:
                 return False
         return True
@@ -90,6 +104,8 @@ class JiraDashboard(App):
                 yield MyIssuesTab()
             with TabPane('JQL', id='jql-tab'):
                 yield JqlTab()
+            with TabPane('Worklog', id='worklog-tab'):
+                yield WorklogTab()
         yield Footer()
 
     def __init__(self):
@@ -290,6 +306,8 @@ class JiraDashboard(App):
             self.query_one(MyIssuesTab).start_loading()
         elif active_tab == 'jql-tab':
             self.query_one(JqlTab).run_search()
+        elif active_tab == 'worklog-tab':
+            self.query_one(WorklogTab).refresh_day()
 
     def action_decrease_summary_width(self) -> None:
         """縮小 Summary 寬度"""
@@ -496,3 +514,15 @@ class JiraDashboard(App):
 
         for tree in self.query(JiraTree):
             tree.action_edit_status()
+
+    def action_worklog_prev_day(self) -> None:
+        """Worklog 前一天"""
+        self.query_one(WorklogTab).go_to_previous_day()
+
+    def action_worklog_next_day(self) -> None:
+        """Worklog 下一天"""
+        self.query_one(WorklogTab).go_to_next_day()
+
+    def action_worklog_today(self) -> None:
+        """Worklog 今天"""
+        self.query_one(WorklogTab).go_to_today()
