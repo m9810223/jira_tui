@@ -1,11 +1,16 @@
 """設定檔管理與 Jira API 客戶端"""
 
+from datetime import date
+from datetime import datetime
+
 import httpx
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from .models import JiraSearchResult
 from .models import JiraTransition
 from .models import JiraUser
+from .models import JiraWorklog
+from .worklog import seconds_to_jira_duration
 
 
 class Config(BaseSettings):
@@ -51,7 +56,7 @@ class JiraClient:
         'summary', 'status', 'assignee', 'priority', 'issuetype', 'project',
         'parent', 'created', 'updated', 'duedate', 'customfield_10015', 'customfield_10019', 'customfield_10020',
         'customfield_10033', 'aggregatetimeoriginalestimate', 'timeoriginalestimate',
-        'aggregatetimespent', 'timespent',
+        'aggregatetimeestimate', 'timeestimate', 'aggregatetimespent', 'timespent',
     ])
 
     def search_jql(self, jql: str, *, next_page_token: str | None = None) -> JiraSearchResult:
@@ -93,6 +98,74 @@ class JiraClient:
         )
         response.raise_for_status()
         return [JiraUser(**u) for u in response.json()]
+
+    def search_active_sprint_subtasks_for_current_user(self) -> list:
+        """取得目前使用者在 active sprint 的 subtasks。"""
+        jql = 'assignee = currentUser() AND sprint in openSprints() AND issuetype in subTaskIssueTypes()'
+        return self.search_jql(jql).issues
+
+    def search_day_worklog_issues_for_current_user(self, selected_day: date) -> list:
+        """取得指定日期有 worklog 的 issues。"""
+        day_str = selected_day.strftime('%Y-%m-%d')
+        jql = f'worklogAuthor = currentUser() AND worklogDate = "{day_str}"'
+        return self.search_jql(jql).issues
+
+    def get_issue_worklogs(self, issue_key: str) -> list[JiraWorklog]:
+        """取得 issue worklogs。"""
+        response = self._request(
+            'GET',
+            f'/rest/api/3/issue/{issue_key}/worklog',
+        )
+        response.raise_for_status()
+        data = response.json()
+        return [JiraWorklog(**worklog) for worklog in data.get('worklogs', [])]
+
+    def add_issue_worklog(
+        self,
+        issue_key: str,
+        *,
+        started: datetime,
+        time_spent_seconds: int,
+        comment_text: str,
+        remaining_estimate_seconds: int | None,
+    ) -> JiraWorklog:
+        """新增 worklog，並視情況更新 remaining estimate。"""
+        params: dict[str, str] = {}
+        if remaining_estimate_seconds is None:
+            params['adjustEstimate'] = 'leave'
+        else:
+            params['adjustEstimate'] = 'new'
+            params['newEstimate'] = seconds_to_jira_duration(remaining_estimate_seconds)
+
+        payload: dict = {
+            'started': started.strftime('%Y-%m-%dT%H:%M:%S.000%z'),
+            'timeSpentSeconds': time_spent_seconds,
+        }
+        if comment_text:
+            payload['comment'] = {
+                'type': 'doc',
+                'version': 1,
+                'content': [
+                    {
+                        'type': 'paragraph',
+                        'content': [
+                            {
+                                'type': 'text',
+                                'text': comment_text,
+                            }
+                        ],
+                    }
+                ],
+            }
+
+        response = self._request(
+            'POST',
+            f'/rest/api/3/issue/{issue_key}/worklog',
+            params=params,
+            json=payload,
+        )
+        response.raise_for_status()
+        return JiraWorklog(**response.json())
 
     def update_issue(self, issue_key: str, fields: dict) -> None:
         """更新 issue 欄位"""

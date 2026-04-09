@@ -145,3 +145,93 @@ TabbedContent {
     color: $text-muted;
     text-style: bold;
 }
+
+/* Worklog Tab */
+#worklog-toolbar {
+    height: auto;
+    padding: 0 1;
+    align: left middle;
+}
+
+#worklog-toolbar Button {
+    width: auto;
+    min-width: 8;
+    margin-right: 1;
+}
+
+#worklog-date-label {
+    width: 14;
+    content-align: center middle;
+    text-style: bold;
+}
+
+#worklog-draft-summary {
+    width: 1fr;
+    content-align: left middle;
+    color: $text-muted;
+}
+
+#worklog-loading {
+    height: auto;
+}
+
+#worklog-body {
+    height: 1fr;
+    padding: 0 1 1 1;
+}
+
+#worklog-time-axis {
+    width: 7;
+    height: 1fr;
+    color: $text-muted;
+}
+
+#worklog-day-grid {
+    width: 1fr;
+    height: 1fr;
+    border: solid $primary;
+    margin-right: 1;
+}
+
+#worklog-issue-picker {
+    width: 38;
+    height: 1fr;
+    border: solid $primary;
+    padding: 1;
+}
+
+.worklog-pane-title {
+    height: auto;
+    margin-bottom: 1;
+    text-style: bold;
+}
+
+#worklog-issue-filter {
+    margin-bottom: 1;
+}
+
+#worklog-issue-list {
+    height: 12;
+    margin-bottom: 1;
+}
+
+#worklog-issue-meta {
+    height: auto;
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#worklog-message {
+    height: 6;
+    margin-bottom: 1;
+}
+
+#worklog-submit-btn {
+    width: 100%;
+}
+
+#worklog-status {
+    height: auto;
+    padding: 0 1;
+    color: $text-muted;
+}

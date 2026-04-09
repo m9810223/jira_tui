@@ -88,6 +88,23 @@ class JiraTimeTracking(JiraModel):
     original_estimate: str | None = None
 
 
+class JiraWorklogAuthor(JiraModel):
+    """Jira Worklog 作者"""
+
+    account_id: str = ''
+    display_name: str = ''
+
+
+class JiraWorklog(JiraModel):
+    """Jira Worklog"""
+
+    id: str
+    author: JiraWorklogAuthor | None = None
+    started: datetime
+    time_spent_seconds: int = 0
+    comment: dict | None = None
+
+
 class JiraIssueFields(JiraModel):
     """Jira Issue 欄位"""
 
@@ -109,8 +126,14 @@ class JiraIssueFields(JiraModel):
     aggregate_time_original_estimate: int | None = Field(
         default=None, validation_alias='aggregatetimeoriginalestimate'
     )
+    aggregate_time_estimate: int | None = Field(
+        default=None, validation_alias='aggregatetimeestimate'
+    )
     time_original_estimate: int | None = Field(
         default=None, validation_alias='timeoriginalestimate'
+    )
+    time_estimate: int | None = Field(
+        default=None, validation_alias='timeestimate'
     )
     aggregate_time_spent: int | None = Field(
         default=None, validation_alias='aggregatetimespent'
