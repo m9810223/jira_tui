@@ -14,6 +14,8 @@ from ..worklog import normalize_slot_range
 class WorklogDayGrid(Static):
     """A simple day-view grid for worklog selection."""
 
+    _ENTRY_STYLE = 'bold black on #808aff'
+
     class SelectionChanged(Message):
         """Emitted when the draft selection changes."""
 
@@ -66,11 +68,8 @@ class WorklogDayGrid(Static):
 
         entry = self._entry_for_slot(slot)
         if entry is not None:
-            if slot == self._slot_index_for_entry(entry):
-                text = self._format_entry_label(entry)
-            else:
-                text = ' '
-            return Text(text[:width].ljust(width), style='bold cyan')
+            text = self._format_entry_line(entry, slot)
+            return Text(text[:width].ljust(width), style=self._ENTRY_STYLE)
 
         return Text(' '.ljust(width))
 
@@ -90,6 +89,19 @@ class WorklogDayGrid(Static):
         end_label = entry.ended.strftime('%H:%M')
         duration_label = format_duration_label(entry.time_spent_seconds)
         return f' {start_label}-{end_label} ({duration_label}) {entry.issue_key} {entry.issue_summary}'
+
+    def _format_entry_line(self, entry: WorklogEntry, slot: int) -> str:
+        start_slot = self._slot_index_for_entry(entry)
+        slot_offset = slot - start_slot
+        if slot_offset == 0:
+            return self._format_entry_label(entry)
+        if slot_offset == 1:
+            if entry.comment_text:
+                return f' {entry.comment_text}'
+            return f' {entry.issue_key}'
+        if slot_offset == 2:
+            return f' {entry.issue_summary}'
+        return ' '
 
     def _slot_from_y(self, y: int) -> int | None:
         if 0 <= y < SLOTS_PER_DAY:
