@@ -1,5 +1,6 @@
 """Worklog domain helpers."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from datetime import datetime
@@ -99,6 +100,35 @@ def worklog_to_entry(worklog: JiraWorklog, issue: JiraIssue) -> WorklogEntry:
         started=worklog.started,
         time_spent_seconds=worklog.time_spent_seconds,
         comment_text=extract_comment_text(worklog.comment),
+    )
+
+
+def collect_day_worklog_entries(
+    day_issues: list[JiraIssue],
+    *,
+    selected_day: date,
+    account_id: str,
+    timezone: ZoneInfo,
+    fetch_issue_worklogs: Callable[[str], list[JiraWorklog]] | None = None,
+) -> list[WorklogEntry]:
+    """Collect filtered worklog entries for a selected day."""
+    entries: list[WorklogEntry] = []
+    for issue in day_issues:
+        worklog_page = issue.fields.worklog
+        if worklog_page is None:
+            worklogs = fetch_issue_worklogs(issue.key) if fetch_issue_worklogs else []
+        elif worklog_page.total is not None and worklog_page.total > len(worklog_page.worklogs):
+            worklogs = fetch_issue_worklogs(issue.key) if fetch_issue_worklogs else worklog_page.worklogs
+        else:
+            worklogs = worklog_page.worklogs
+        for worklog in worklogs:
+            entries.append(worklog_to_entry(worklog, issue))
+
+    return filter_worklogs_for_day(
+        entries,
+        selected_day=selected_day,
+        account_id=account_id,
+        timezone=timezone,
     )
 
 

@@ -39,6 +39,7 @@ class WorklogDayGrid(Static):
         self.worklog_entries: list[WorklogEntry] = []
         self.draft_slots: tuple[int, int] | None = None
         self._drag_anchor_slot: int | None = None
+        self._pending_entry_selection: WorklogEntry | None = None
         self._entry_style_map: dict[str, str] = {}
         self._allow_entry_selection = allow_entry_selection
         self.can_focus = True
@@ -61,6 +62,8 @@ class WorklogDayGrid(Static):
 
     def clear_draft(self) -> None:
         self.draft_slots = None
+        self._drag_anchor_slot = None
+        self._pending_entry_selection = None
         self.refresh()
 
     def render(self) -> Text:
@@ -139,9 +142,11 @@ class WorklogDayGrid(Static):
             return
         entry = self._entry_for_slot(slot)
         if entry is not None and self._allow_entry_selection:
-            self.post_message(self.EntrySelected(entry))
+            self._pending_entry_selection = entry
+            self._drag_anchor_slot = None
             event.stop()
             return
+        self._pending_entry_selection = None
         self._drag_anchor_slot = slot
         self.set_draft_slots(slot, slot + 1)
         event.stop()
@@ -157,9 +162,17 @@ class WorklogDayGrid(Static):
         event.stop()
 
     def on_mouse_up(self, event: events.MouseUp) -> None:
+        slot = self._slot_from_y(event.y)
+        if self._pending_entry_selection is not None:
+            entry = self._entry_for_slot(slot) if slot is not None else None
+            pending = self._pending_entry_selection
+            self._pending_entry_selection = None
+            if entry is not None and entry.worklog_id == pending.worklog_id:
+                self.post_message(self.EntrySelected(pending))
+            event.stop()
+            return
         if self._drag_anchor_slot is None:
             return
-        slot = self._slot_from_y(event.y)
         if slot is not None:
             start_slot, end_slot = normalize_slot_range(self._drag_anchor_slot, slot)
             self.set_draft_slots(start_slot, end_slot)
