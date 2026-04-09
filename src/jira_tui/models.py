@@ -105,6 +105,15 @@ class JiraWorklog(JiraModel):
     comment: dict | None = None
 
 
+class JiraWorklogPage(JiraModel):
+    """Jira Issue 欄位中的 worklog 分頁資料"""
+
+    start_at: int = 0
+    max_results: int = 0
+    total: int | None = None
+    worklogs: list[JiraWorklog] = []
+
+
 class JiraIssueFields(JiraModel):
     """Jira Issue 欄位"""
 
@@ -141,6 +150,7 @@ class JiraIssueFields(JiraModel):
     time_spent: int | None = Field(
         default=None, validation_alias='timespent'
     )
+    worklog: JiraWorklogPage | None = None
 
 
 class JiraIssue(JiraModel):

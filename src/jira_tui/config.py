@@ -2,6 +2,7 @@
 
 from datetime import date
 from datetime import datetime
+from datetime import timedelta
 
 import httpx
 from pydantic import Field
@@ -59,12 +60,19 @@ class JiraClient:
         'aggregatetimeestimate', 'timeestimate', 'aggregatetimespent', 'timespent',
     ])
 
-    def search_jql(self, jql: str, *, next_page_token: str | None = None) -> JiraSearchResult:
+    def search_jql(
+        self,
+        jql: str,
+        *,
+        next_page_token: str | None = None,
+        fields: str | None = None,
+        max_results: int = 100,
+    ) -> JiraSearchResult:
         """使用 JQL 搜尋 issues"""
         params: dict = {
             'jql': jql,
-            'maxResults': 100,
-            'fields': self.SEARCH_FIELDS,
+            'maxResults': max_results,
+            'fields': fields or self.SEARCH_FIELDS,
         }
         if next_page_token:
             params['nextPageToken'] = next_page_token
@@ -106,9 +114,17 @@ class JiraClient:
 
     def search_day_worklog_issues_for_current_user(self, selected_day: date) -> list:
         """取得指定日期有 worklog 的 issues。"""
-        day_str = selected_day.strftime('%Y-%m-%d')
-        jql = f'worklogAuthor = currentUser() AND worklogDate = "{day_str}"'
-        return self.search_jql(jql).issues
+        next_day = selected_day + timedelta(days=1)
+        jql = (
+            'worklogAuthor in (currentUser()) '
+            f"AND worklogDate >= '{selected_day:%Y-%m-%d}' "
+            f"AND worklogDate < '{next_day:%Y-%m-%d}'"
+        )
+        return self.search_jql(
+            jql,
+            fields='summary,worklog',
+            max_results=1000,
+        ).issues
 
     def get_issue_worklogs(self, issue_key: str) -> list[JiraWorklog]:
         """取得 issue worklogs。"""

@@ -14,7 +14,10 @@ from ..worklog import normalize_slot_range
 class WorklogDayGrid(Static):
     """A simple day-view grid for worklog selection."""
 
-    _ENTRY_STYLE = 'bold black on #808aff'
+    _ENTRY_STYLES = (
+        'bold black on #808aff',
+        'bold black on #78c9ff',
+    )
 
     class SelectionChanged(Message):
         """Emitted when the draft selection changes."""
@@ -29,10 +32,18 @@ class WorklogDayGrid(Static):
         self.worklog_entries: list[WorklogEntry] = []
         self.draft_slots: tuple[int, int] | None = None
         self._drag_anchor_slot: int | None = None
+        self._entry_style_map: dict[str, str] = {}
         self.can_focus = True
 
     def set_worklog_entries(self, entries: list[WorklogEntry]) -> None:
         self.worklog_entries = entries
+        self._entry_style_map = {}
+        sorted_entries = sorted(
+            entries,
+            key=lambda entry: (entry.started, entry.ended, entry.issue_key, entry.worklog_id),
+        )
+        for index, entry in enumerate(sorted_entries):
+            self._entry_style_map[self._entry_identifier(entry)] = self._ENTRY_STYLES[index % 2]
         self.refresh()
 
     def set_draft_slots(self, start_slot: int, end_slot: int) -> None:
@@ -69,7 +80,7 @@ class WorklogDayGrid(Static):
         entry = self._entry_for_slot(slot)
         if entry is not None:
             text = self._format_entry_line(entry, slot)
-            return Text(text[:width].ljust(width), style=self._ENTRY_STYLE)
+            return Text(text[:width].ljust(width), style=self._entry_style(entry))
 
         return Text(' '.ljust(width))
 
@@ -89,6 +100,12 @@ class WorklogDayGrid(Static):
         end_label = entry.ended.strftime('%H:%M')
         duration_label = format_duration_label(entry.time_spent_seconds)
         return f' {start_label}-{end_label} ({duration_label}) {entry.issue_key} {entry.issue_summary}'
+
+    def _entry_identifier(self, entry: WorklogEntry) -> str:
+        return entry.worklog_id or f'{entry.issue_key}:{entry.started.isoformat()}'
+
+    def _entry_style(self, entry: WorklogEntry) -> str:
+        return self._entry_style_map.get(self._entry_identifier(entry), self._ENTRY_STYLES[0])
 
     def _format_entry_line(self, entry: WorklogEntry, slot: int) -> str:
         start_slot = self._slot_index_for_entry(entry)

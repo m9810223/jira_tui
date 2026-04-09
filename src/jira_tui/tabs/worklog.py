@@ -115,7 +115,14 @@ class WorklogTab(JiraClientMixin, Vertical):
         day_issues = client.search_day_worklog_issues_for_current_user(selected_day)
         entries: list[WorklogEntry] = []
         for issue in day_issues:
-            for worklog in client.get_issue_worklogs(issue.key):
+            worklog_page = issue.fields.worklog
+            if worklog_page is None:
+                worklogs = client.get_issue_worklogs(issue.key)
+            elif worklog_page.total is not None and worklog_page.total > len(worklog_page.worklogs):
+                worklogs = client.get_issue_worklogs(issue.key)
+            else:
+                worklogs = worklog_page.worklogs
+            for worklog in worklogs:
                 entries.append(worklog_to_entry(worklog, issue))
 
         filtered_entries = filter_worklogs_for_day(
