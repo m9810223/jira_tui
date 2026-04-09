@@ -146,42 +146,52 @@ class JiraClient:
         remaining_estimate_seconds: int | None,
     ) -> JiraWorklog:
         """新增 worklog，並視情況更新 remaining estimate。"""
-        params: dict[str, str] = {}
-        if remaining_estimate_seconds is None:
-            params['adjustEstimate'] = 'leave'
-        else:
-            params['adjustEstimate'] = 'new'
-            params['newEstimate'] = seconds_to_jira_duration(remaining_estimate_seconds)
-
         payload: dict = {
             'started': started.strftime('%Y-%m-%dT%H:%M:%S.000%z'),
-            'timeSpentSeconds': time_spent_seconds,
+            'timeSpent': seconds_to_jira_duration(time_spent_seconds),
         }
         if comment_text:
-            payload['comment'] = {
-                'type': 'doc',
-                'version': 1,
-                'content': [
-                    {
-                        'type': 'paragraph',
-                        'content': [
-                            {
-                                'type': 'text',
-                                'text': comment_text,
-                            }
-                        ],
-                    }
-                ],
-            }
+            payload['comment'] = comment_text
 
         response = self._request(
             'POST',
-            f'/rest/api/3/issue/{issue_key}/worklog',
-            params=params,
+            f'/rest/api/2/issue/{issue_key}/worklog',
+            params={'adjustEstimate': 'AUTO'},
             json=payload,
         )
         response.raise_for_status()
         return JiraWorklog(**response.json())
+
+    def update_issue_worklog(
+        self,
+        issue_key: str,
+        worklog_id: str,
+        *,
+        started: datetime,
+        time_spent_seconds: int,
+        comment_text: str,
+    ) -> JiraWorklog:
+        """更新既有 worklog。"""
+        payload: dict = {
+            'started': started.strftime('%Y-%m-%dT%H:%M:%S.000%z'),
+            'timeSpent': seconds_to_jira_duration(time_spent_seconds),
+            'comment': comment_text,
+        }
+        response = self._request(
+            'PUT',
+            f'/rest/api/2/issue/{issue_key}/worklog/{worklog_id}',
+            json=payload,
+        )
+        response.raise_for_status()
+        return JiraWorklog(**response.json())
+
+    def delete_issue_worklog(self, issue_key: str, worklog_id: str) -> None:
+        """刪除既有 worklog。"""
+        response = self._request(
+            'DELETE',
+            f'/rest/api/2/issue/{issue_key}/worklog/{worklog_id}',
+        )
+        response.raise_for_status()
 
     def update_issue(self, issue_key: str, fields: dict) -> None:
         """更新 issue 欄位"""

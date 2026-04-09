@@ -15,6 +15,9 @@ from textual.widgets import Static
 
 from ..config import JiraClient
 from ..models import JiraIssue
+from ..screens.worklog_editor import WorklogDeleteResult
+from ..screens.worklog_editor import WorklogEditorModal
+from ..screens.worklog_editor import WorklogEditorResult
 from ..worklog import DAY_END_HOUR
 from ..worklog import DAY_START_HOUR
 from ..worklog import SLOT_MINUTES
@@ -198,6 +201,62 @@ class WorklogTab(JiraClientMixin, Vertical):
             remaining_estimate_seconds,
         )
 
+    def open_existing_worklog_editor(self, entry: WorklogEntry) -> None:
+        myself = self.app.myself  # pyright: ignore[reportAttributeAccessIssue]
+        if not myself or entry.author_account_id != myself.get('accountId'):
+            self._set_status('You can only edit your own worklogs.', severity='warning')
+            return
+        self.app.push_screen(
+            WorklogEditorModal(
+                issue_key=entry.issue_key,
+                issue_summary=entry.issue_summary,
+                selected_day=self._selected_day,
+                timezone=self._timezone,
+                existing_entries=self._worklog_entries,
+                current_entry=entry,
+            ),
+            self._on_worklog_editor_complete,
+        )
+
+    def _on_worklog_editor_complete(
+        self,
+        result: WorklogEditorResult | WorklogDeleteResult | None,
+    ) -> None:
+        if result is None:
+            return
+
+        client = self._get_jira_client(silent=True)
+        if not client:
+            return
+
+        if isinstance(result, WorklogDeleteResult):
+            self._delete_worklog(client, result.issue_key, result.worklog_id)
+            return
+
+        if result.worklog_id is None:
+            issue = self.issue_picker.selected_issue
+            if issue is None:
+                self._set_status('Please select a subtask before submitting.', severity='error')
+                return
+            self._submit_worklog(
+                client,
+                issue,
+                result.started,
+                result.time_spent_seconds,
+                result.comment_text,
+                None,
+            )
+            return
+
+        self._update_worklog(
+            client,
+            result.issue_key,
+            result.worklog_id,
+            result.started,
+            result.time_spent_seconds,
+            result.comment_text,
+        )
+
     @work(thread=True)
     def _submit_worklog(
         self,
@@ -217,10 +276,47 @@ class WorklogTab(JiraClientMixin, Vertical):
         )
         self.app.call_from_thread(self._after_submit, issue.key)
 
+    @work(thread=True)
+    def _update_worklog(
+        self,
+        client: JiraClient,
+        issue_key: str,
+        worklog_id: str,
+        started: datetime,
+        time_spent_seconds: int,
+        comment_text: str,
+    ) -> None:
+        client.update_issue_worklog(
+            issue_key,
+            worklog_id,
+            started=started,
+            time_spent_seconds=time_spent_seconds,
+            comment_text=comment_text,
+        )
+        self.app.call_from_thread(self._after_update, issue_key)
+
+    @work(thread=True)
+    def _delete_worklog(
+        self,
+        client: JiraClient,
+        issue_key: str,
+        worklog_id: str,
+    ) -> None:
+        client.delete_issue_worklog(issue_key, worklog_id)
+        self.app.call_from_thread(self._after_delete, issue_key)
+
     def _after_submit(self, issue_key: str) -> None:
         self.query_one(WorklogDayGrid).clear_draft()
         self.issue_picker.clear_message()
         self._set_status(f'Worklog added for {issue_key}.', severity='information')
+        self.refresh_day()
+
+    def _after_update(self, issue_key: str) -> None:
+        self._set_status(f'Worklog updated for {issue_key}.', severity='information')
+        self.refresh_day()
+
+    def _after_delete(self, issue_key: str) -> None:
+        self._set_status(f'Worklog deleted for {issue_key}.', severity='information')
         self.refresh_day()
 
     def _set_status(self, message: str, *, severity: str) -> None:
@@ -278,3 +374,7 @@ class WorklogTab(JiraClientMixin, Vertical):
     @on(WorklogIssuePicker.IssueSelected)
     def on_issue_selected(self) -> None:
         self._update_draft_summary()
+
+    @on(WorklogDayGrid.EntrySelected)
+    def on_existing_entry_selected(self, event: WorklogDayGrid.EntrySelected) -> None:
+        self.open_existing_worklog_editor(event.entry)

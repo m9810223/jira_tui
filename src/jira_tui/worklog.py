@@ -60,6 +60,13 @@ def selection_to_seconds(start_slot: int, end_slot: int) -> int:
     return max(0, end_slot - start_slot) * SLOT_SECONDS
 
 
+def datetime_to_slot_range(started: datetime, time_spent_seconds: int) -> tuple[int, int]:
+    """Convert a worklog datetime range into grid slots."""
+    start_slot = int((started.hour - DAY_START_HOUR) * 2 + started.minute // SLOT_MINUTES)
+    duration_slots = max(1, time_spent_seconds // SLOT_SECONDS)
+    return start_slot, start_slot + duration_slots
+
+
 def clamp_remaining_estimate(
     remaining_seconds: int | None,
     logged_seconds: int,
@@ -115,9 +122,13 @@ def has_overlap(
     start_at: datetime,
     end_at: datetime,
     entries: list[WorklogEntry],
+    *,
+    ignore_worklog_id: str | None = None,
 ) -> bool:
     """Check if a proposed block overlaps an existing one."""
     for entry in entries:
+        if ignore_worklog_id is not None and entry.worklog_id == ignore_worklog_id:
+            continue
         if start_at < entry.ended and end_at > entry.started:
             return True
     return False
@@ -154,6 +165,8 @@ def extract_comment_text(comment: dict | None) -> str:
     """Extract plain text from Jira ADF comment payload."""
     if not comment:
         return ''
+    if isinstance(comment, str):
+        return comment
     content = comment.get('content', [])
     parts: list[str] = []
     for block in content:

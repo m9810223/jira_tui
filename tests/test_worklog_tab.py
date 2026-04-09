@@ -7,7 +7,11 @@ from zoneinfo import ZoneInfo
 from jira_tui.app import JiraDashboard
 from jira_tui.models import JiraIssue
 from jira_tui.models import JiraWorklog
+from jira_tui.screens.worklog_editor import WorklogDeleteResult
+from jira_tui.screens.worklog_editor import WorklogEditorResult
 from jira_tui.tabs.worklog import WorklogTab
+from jira_tui.tabs.my_issues import MyIssuesTab
+from jira_tui.widgets.tree import JiraTree
 from jira_tui.widgets.worklog_day_grid import WorklogDayGrid
 from jira_tui.worklog import WorklogEntry
 from textual.widgets import TabbedContent
@@ -80,6 +84,8 @@ class FakeJiraClient:
             )
         ]
         self.added_worklogs: list[dict] = []
+        self.updated_worklogs: list[dict] = []
+        self.deleted_worklogs: list[dict] = []
 
     def get_myself(self) -> dict:
         return self.myself
@@ -122,6 +128,42 @@ class FakeJiraClient:
             }
         )
 
+    def update_issue_worklog(
+        self,
+        issue_key: str,
+        worklog_id: str,
+        *,
+        started: datetime,
+        time_spent_seconds: int,
+        comment_text: str,
+    ) -> JiraWorklog:
+        self.updated_worklogs.append(
+            {
+                'issue_key': issue_key,
+                'worklog_id': worklog_id,
+                'started': started,
+                'time_spent_seconds': time_spent_seconds,
+                'comment_text': comment_text,
+            }
+        )
+        return JiraWorklog.model_validate(
+            {
+                'id': worklog_id,
+                'author': {'accountId': 'me', 'displayName': 'Test User'},
+                'started': started.strftime('%Y-%m-%dT%H:%M:%S.000%z'),
+                'timeSpentSeconds': time_spent_seconds,
+                'comment': comment_text,
+            }
+        )
+
+    def delete_issue_worklog(self, issue_key: str, worklog_id: str) -> None:
+        self.deleted_worklogs.append(
+            {
+                'issue_key': issue_key,
+                'worklog_id': worklog_id,
+            }
+        )
+
 
 class WorklogTestApp(JiraDashboard):
     def __init__(self, client: FakeJiraClient) -> None:
@@ -130,6 +172,32 @@ class WorklogTestApp(JiraDashboard):
 
     def _get_jira_client(self) -> FakeJiraClient:
         return self._test_client
+
+
+def make_tree_issue(
+    key: str,
+    summary: str,
+    *,
+    issue_type: str,
+    project_key: str = 'PROJ',
+    parent_key: str | None = None,
+    parent_summary: str = '',
+    parent_type: str = 'Story',
+) -> JiraIssue:
+    fields: dict = {
+        'summary': summary,
+        'issuetype': {'name': issue_type},
+        'project': {'key': project_key, 'name': project_key},
+    }
+    if parent_key:
+        fields['parent'] = {
+            'key': parent_key,
+            'fields': {
+                'summary': parent_summary,
+                'issuetype': {'name': parent_type},
+            },
+        }
+    return JiraIssue.model_validate({'key': key, 'fields': fields})
 
 
 class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
@@ -233,12 +301,12 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             tab.refresh_day()
             await pilot.pause()
 
-            await pilot.mouse_down('#worklog-day-grid', offset=(2, 2))
-            await pilot.mouse_up('#worklog-day-grid', offset=(2, 4))
+            await pilot.mouse_down('#worklog-day-grid', offset=(2, 6))
+            await pilot.mouse_up('#worklog-day-grid', offset=(2, 8))
             await pilot.pause()
 
             grid = tab.query_one(WorklogDayGrid)
-            self.assertEqual((2, 5), grid.draft_slots)
+            self.assertEqual((6, 9), grid.draft_slots)
 
     async def test_submit_worklog_uses_selected_subtask_and_message(self) -> None:
         async with self.app.run_test() as pilot:
@@ -261,6 +329,96 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(3600, payload['time_spent_seconds'])
             self.assertEqual('Deep focus', payload['comment_text'])
             self.assertEqual(0, payload['remaining_estimate_seconds'])
+
+    async def test_click_existing_worklog_opens_editor_modal(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            tab.set_selected_day(date(2026, 4, 9))
+            tab.refresh_day()
+            await pilot.pause()
+
+            await pilot.click('#worklog-day-grid', offset=(2, 2))
+            await pilot.pause()
+
+            self.assertEqual('WorklogEditorModal', self.app.screen_stack[-1].__class__.__name__)
+
+    async def test_apply_worklog_editor_result_updates_existing_worklog(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            tab.set_selected_day(date(2026, 4, 9))
+            tab.refresh_day()
+            await pilot.pause()
+
+            entry = tab.query_one(WorklogDayGrid).worklog_entries[0]
+            result = WorklogEditorResult(
+                issue_key=entry.issue_key,
+                worklog_id=entry.worklog_id,
+                started=datetime(2026, 4, 9, 10, 0, tzinfo=ZoneInfo('Asia/Taipei')),
+                time_spent_seconds=1800,
+                comment_text='Edited comment',
+            )
+
+            tab._on_worklog_editor_complete(result)
+            await pilot.pause()
+
+            self.assertEqual(1, len(self.client.updated_worklogs))
+            payload = self.client.updated_worklogs[0]
+            self.assertEqual('w1', payload['worklog_id'])
+            self.assertEqual(1800, payload['time_spent_seconds'])
+            self.assertEqual('Edited comment', payload['comment_text'])
+
+    async def test_apply_worklog_delete_result_deletes_existing_worklog(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            tab.set_selected_day(date(2026, 4, 9))
+            tab.refresh_day()
+            await pilot.pause()
+
+            tab._on_worklog_editor_complete(
+                WorklogDeleteResult(issue_key='PROJ-1', worklog_id='w1')
+            )
+            await pilot.pause()
+
+            self.assertEqual([{'issue_key': 'PROJ-1', 'worklog_id': 'w1'}], self.client.deleted_worklogs)
+
+    async def test_issue_tree_can_open_quick_add_worklog_modal_for_subtask(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'my-issues-tab'
+            issues_tab = self.app.query_one(MyIssuesTab)
+            issues_tab._on_search_complete(
+                [
+                    make_tree_issue('PROJ-100', 'Parent story', issue_type='Story'),
+                    make_tree_issue(
+                        'PROJ-101',
+                        'Child subtask',
+                        issue_type='Sub-task',
+                        parent_key='PROJ-100',
+                        parent_summary='Parent story',
+                    ),
+                ],
+                [],
+            )
+            await pilot.pause()
+
+            tree = issues_tab.query_one(JiraTree)
+            subtask_node = next(
+                node for node in tree._tree_nodes.values()
+                if node.data and node.data.issue and node.data.issue.key == 'PROJ-101'
+            )
+            pushed: list[object] = []
+
+            def _capture_push(screen, callback=None):
+                pushed.append(screen)
+                return None
+
+            self.app.push_screen = _capture_push  # type: ignore[method-assign]
+            tree._open_add_worklog_modal(subtask_node.data.issue)  # type: ignore[arg-type]
+            await pilot.pause()
+
+            self.assertEqual('WorklogEditorModal', pushed[-1].__class__.__name__)
 
     async def test_submit_without_selected_issue_is_rejected(self) -> None:
         async with self.app.run_test() as pilot:

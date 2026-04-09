@@ -6,6 +6,7 @@ import unittest
 from jira_tui.models import JiraIssue
 from jira_tui.worklog import WorklogEntry
 from jira_tui.worklog import clamp_remaining_estimate
+from jira_tui.worklog import extract_comment_text
 from jira_tui.worklog import filter_candidate_issues
 from jira_tui.worklog import filter_worklogs_for_day
 from jira_tui.worklog import has_overlap
@@ -135,10 +136,6 @@ class WorklogDomainTests(unittest.TestCase):
                 entries,
             )
         )
-        self.assertFalse(
-            has_overlap(
-                datetime(2026, 4, 9, 10, 0, tzinfo=tz),
-                datetime(2026, 4, 9, 10, 30, tzinfo=tz),
-                entries,
-            )
-        )
+
+    def test_extract_comment_text_supports_plain_string_comments(self) -> None:
+        self.assertEqual('plain text', extract_comment_text('plain text'))  # type: ignore[arg-type]

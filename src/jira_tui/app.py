@@ -1,5 +1,6 @@
 """Jira Dashboard TUI 主應用程式"""
 
+from datetime import datetime
 from pathlib import Path
 
 from textual import on
@@ -48,6 +49,7 @@ class JiraDashboard(App):
         Binding('E', 'edit_time_estimate', '編輯 Time Est'),
         Binding('m', 'move_mark', '移動 Issue'),
         Binding('T', 'edit_status', '編輯 Status'),
+        Binding('l', 'add_worklog', 'Add Worklog'),
         Binding('alt+left', 'worklog_prev_day', 'Worklog 前一天'),
         Binding('alt+right', 'worklog_next_day', 'Worklog 下一天'),
         Binding('alt+t', 'worklog_today', 'Worklog 今天'),
@@ -75,6 +77,7 @@ class JiraDashboard(App):
         'edit_time_estimate',
         'move_mark',
         'edit_status',
+        'add_worklog',
     }
     _WORKLOG_TAB_ACTIONS = {
         'worklog_prev_day',
@@ -279,6 +282,49 @@ class JiraDashboard(App):
             )
         except Exception as e:
             self.call_from_thread(self.notify, f'變更狀態失敗: {e}', severity='error')
+
+    @on(JiraTree.AddIssueWorklog)
+    def handle_add_issue_worklog(self, event: JiraTree.AddIssueWorklog) -> None:
+        self._do_add_issue_worklog(
+            event.issue_key,
+            event.started,
+            event.time_spent_seconds,
+            event.comment_text,
+            event.remaining_estimate_seconds,
+        )
+
+    @work(thread=True)
+    def _do_add_issue_worklog(
+        self,
+        issue_key: str,
+        started: datetime,
+        time_spent_seconds: int,
+        comment_text: str,
+        remaining_estimate_seconds: int | None,
+    ) -> None:
+        try:
+            client = self._get_jira_client()
+            client.add_issue_worklog(
+                issue_key,
+                started=started,
+                time_spent_seconds=time_spent_seconds,
+                comment_text=comment_text,
+                remaining_estimate_seconds=remaining_estimate_seconds,
+            )
+            self.call_from_thread(self._after_issue_worklog_added, issue_key)
+        except Exception as e:
+            self.call_from_thread(self.notify, f'新增 worklog 失敗: {e}', severity='error')
+
+    def _after_issue_worklog_added(self, issue_key: str) -> None:
+        self.notify(f'{issue_key} worklog 已新增', timeout=2)
+        try:
+            self.query_one(MyIssuesTab).run_search()
+        except Exception:
+            pass
+        try:
+            self.query_one(WorklogTab).refresh_day()
+        except Exception:
+            pass
 
 
     def _update_timeline_width(self) -> None:
@@ -514,6 +560,13 @@ class JiraDashboard(App):
 
         for tree in self.query(JiraTree):
             tree.action_edit_status()
+
+    def action_add_worklog(self) -> None:
+        """在 Issues 樹上對目前選取的 subtask 新增 worklog。"""
+        if self.query_one(TabbedContent).active != 'my-issues-tab':
+            return
+        for tree in self.query(JiraTree):
+            tree.action_add_worklog()
 
     def action_worklog_prev_day(self) -> None:
         """Worklog 前一天"""
