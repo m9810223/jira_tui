@@ -6,6 +6,7 @@ import unittest
 from jira_tui.models import JiraIssue
 from jira_tui.worklog import WorklogEntry
 from jira_tui.worklog import clamp_remaining_estimate
+from jira_tui.worklog import datetime_to_slot_range
 from jira_tui.worklog import extract_comment_text
 from jira_tui.worklog import filter_candidate_issues
 from jira_tui.worklog import filter_worklogs_for_day
@@ -54,6 +55,14 @@ class WorklogDomainTests(unittest.TestCase):
 
     def test_selection_to_seconds_returns_thirty_minute_units(self) -> None:
         self.assertEqual(90 * 60, selection_to_seconds(1, 4))
+
+    def test_datetime_to_slot_range_rounds_non_half_hour_duration_up(self) -> None:
+        tz = ZoneInfo('Asia/Taipei')
+        start_slot, end_slot = datetime_to_slot_range(
+            datetime(2026, 4, 9, 9, 0, tzinfo=tz),
+            45 * 60,
+        )
+        self.assertEqual((2, 4), (start_slot, end_slot))
 
     def test_clamp_remaining_estimate_stops_at_zero(self) -> None:
         self.assertEqual(0, clamp_remaining_estimate(1800, 3600))

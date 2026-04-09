@@ -157,6 +157,7 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
 
     def on_mount(self) -> None:
         grid = self.query_one('#worklog-editor-grid', WorklogDayGrid)
+        grid.set_display_timezone(self._timezone)
         grid.set_worklog_entries(self._existing_entries)
         if self._current_entry is not None:
             start_slot, end_slot = datetime_to_slot_range(
