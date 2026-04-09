@@ -64,7 +64,7 @@ def selection_to_seconds(start_slot: int, end_slot: int) -> int:
 def datetime_to_slot_range(started: datetime, time_spent_seconds: int) -> tuple[int, int]:
     """Convert a worklog datetime range into grid slots."""
     start_slot = int((started.hour - DAY_START_HOUR) * 2 + started.minute // SLOT_MINUTES)
-    duration_slots = max(1, time_spent_seconds // SLOT_SECONDS)
+    duration_slots = max(1, (time_spent_seconds + SLOT_SECONDS - 1) // SLOT_SECONDS)
     return start_slot, start_slot + duration_slots
 
 

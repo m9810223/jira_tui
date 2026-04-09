@@ -44,6 +44,7 @@ class WorklogTab(JiraClientMixin, Vertical):
         self._timezone = ZoneInfo('Asia/Taipei')
         self._worklog_entries: list[WorklogEntry] = []
         self._candidate_issues: list[JiraIssue] = []
+        self._day_load_request_id = 0
 
     @property
     def selected_day(self) -> date:
@@ -98,60 +99,82 @@ class WorklogTab(JiraClientMixin, Vertical):
         client = self._get_jira_client(silent=True)
         if not client:
             return
+        self._day_load_request_id += 1
+        request_id = self._day_load_request_id
         self.query_one('#worklog-loading', LoadingIndicator).remove_class('hidden')
         self.query_one('#worklog-status', Static).update('Loading worklog data...')
-        self._load_day_data(client, self._selected_day)
+        self._load_day_data(client, self._selected_day, request_id)
 
     @work(thread=True)
-    def _load_day_data(self, client: JiraClient, selected_day: date) -> None:
-        myself = self.app.myself  # pyright: ignore[reportAttributeAccessIssue]
-        if myself is None:
-            myself = client.get_myself()
-            self.app.myself = myself  # pyright: ignore[reportAttributeAccessIssue]
-
-        timezone_name = myself.get('timeZone') or 'Asia/Taipei'
+    def _load_day_data(self, client: JiraClient, selected_day: date, request_id: int) -> None:
         try:
-            timezone = ZoneInfo(timezone_name)
-        except Exception:
-            timezone = ZoneInfo('Asia/Taipei')
+            myself = self.app.myself  # pyright: ignore[reportAttributeAccessIssue]
+            if myself is None:
+                myself = client.get_myself()
+                self.app.myself = myself  # pyright: ignore[reportAttributeAccessIssue]
 
-        candidate_issues = client.search_active_sprint_subtasks_for_current_user()
-        day_issues = client.search_day_worklog_issues_for_current_user(selected_day)
-        filtered_entries = collect_day_worklog_entries(
-            day_issues,
-            selected_day=selected_day,
-            account_id=myself.get('accountId', ''),
-            timezone=timezone,
-            fetch_issue_worklogs=client.get_issue_worklogs,
-        )
+            timezone_name = myself.get('timeZone') or 'Asia/Taipei'
+            try:
+                timezone = ZoneInfo(timezone_name)
+            except Exception:
+                timezone = ZoneInfo('Asia/Taipei')
 
-        self.app.call_from_thread(
-            self._apply_day_data,
-            selected_day,
-            timezone,
-            candidate_issues,
-            filtered_entries,
-        )
+            candidate_issues = client.search_active_sprint_subtasks_for_current_user()
+            day_issues = client.search_day_worklog_issues_for_current_user(selected_day)
+            filtered_entries = collect_day_worklog_entries(
+                day_issues,
+                selected_day=selected_day,
+                account_id=myself.get('accountId', ''),
+                timezone=timezone,
+                fetch_issue_worklogs=client.get_issue_worklogs,
+            )
+
+            self.app.call_from_thread(
+                self._apply_day_data,
+                request_id,
+                selected_day,
+                timezone,
+                candidate_issues,
+                filtered_entries,
+            )
+        except Exception as exc:
+            self.app.call_from_thread(
+                self._handle_day_load_error,
+                request_id,
+                f'Failed to load worklog data: {exc}',
+            )
 
     def _apply_day_data(
         self,
+        request_id: int,
         selected_day: date,
         timezone: ZoneInfo,
         candidate_issues: list[JiraIssue],
         worklog_entries: list[WorklogEntry],
     ) -> None:
+        if request_id != self._day_load_request_id:
+            return
         self._selected_day = selected_day
         self._timezone = timezone
         self._candidate_issues = candidate_issues
         self._worklog_entries = worklog_entries
         self.issue_picker.set_issues(candidate_issues)
-        self.query_one(WorklogDayGrid).set_worklog_entries(worklog_entries)
+        grid = self.query_one(WorklogDayGrid)
+        grid.set_display_timezone(timezone)
+        grid.set_worklog_entries(worklog_entries)
         self.query_one('#worklog-loading', LoadingIndicator).add_class('hidden')
         self.query_one('#worklog-status', Static).update(
             f'{len(worklog_entries)} worklogs, {len(candidate_issues)} candidate subtasks'
         )
         self._update_selected_day_label()
         self._update_draft_summary()
+
+    def _handle_day_load_error(self, request_id: int, message: str) -> None:
+        if request_id != self._day_load_request_id:
+            return
+        self.query_one('#worklog-loading', LoadingIndicator).add_class('hidden')
+        self.query_one('#worklog-status', Static).update(message)
+        self.app.notify(message, severity='error', timeout=2)
 
     def submit_worklog(self) -> None:
         issue = self.issue_picker.selected_issue

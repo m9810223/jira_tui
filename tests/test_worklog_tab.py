@@ -17,6 +17,8 @@ from jira_tui.worklog import WorklogEntry
 from textual.geometry import Region
 from textual.geometry import Size
 from textual.geometry import Spacing
+from textual.widgets import LoadingIndicator
+from textual.widgets import Static
 from textual.widgets import TabbedContent
 
 
@@ -347,6 +349,20 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(grid._slot_from_y(0))
         self.assertEqual(0, grid._slot_from_y(1))
 
+    def test_grid_slot_uses_display_timezone_for_entry_placement(self) -> None:
+        grid = WorklogDayGrid()
+        grid.set_display_timezone(ZoneInfo('Asia/Taipei'))
+        entry = WorklogEntry(
+            worklog_id='w1',
+            issue_key='PROJ-1',
+            issue_summary='Alpha task',
+            author_account_id='me',
+            started=datetime(2026, 4, 9, 1, 0, tzinfo=ZoneInfo('UTC')),
+            time_spent_seconds=3600,
+            comment_text='',
+        )
+        self.assertEqual(2, grid._slot_index_for_entry(entry))
+
     async def test_worklog_day_navigation_actions_change_selected_day(self) -> None:
         async with self.app.run_test() as pilot:
             self.app.query_one(TabbedContent).active = 'worklog-tab'
@@ -360,6 +376,40 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             self.app.action_worklog_prev_day()
             await pilot.pause()
             self.assertEqual(date(2026, 4, 9), tab.selected_day)
+
+    async def test_stale_day_load_response_does_not_override_latest_selection(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            latest_day = date(2026, 4, 10)
+            stale_day = date(2026, 4, 9)
+            tab.set_selected_day(latest_day)
+            tab._day_load_request_id = 2
+
+            tab._apply_day_data(
+                1,
+                stale_day,
+                ZoneInfo('Asia/Taipei'),
+                self.client.active_sprint_issues,
+                [],
+            )
+            await pilot.pause()
+            self.assertEqual(latest_day, tab.selected_day)
+
+    async def test_day_load_error_clears_loading_and_sets_status(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            tab._day_load_request_id = 1
+            loading = tab.query_one('#worklog-loading', LoadingIndicator)
+            loading.remove_class('hidden')
+
+            tab._handle_day_load_error(1, 'load failed')
+            await pilot.pause()
+
+            self.assertTrue(loading.has_class('hidden'))
+            status = tab.query_one('#worklog-status', Static)
+            self.assertEqual('load failed', str(status.render()))
 
     async def test_mouse_drag_creates_a_draft_selection(self) -> None:
         async with self.app.run_test() as pilot:

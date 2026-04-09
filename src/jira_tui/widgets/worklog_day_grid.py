@@ -1,5 +1,7 @@
 """Worklog day grid widget."""
 
+from zoneinfo import ZoneInfo
+
 from rich.text import Text
 from textual import events
 from textual.message import Message
@@ -42,7 +44,12 @@ class WorklogDayGrid(Static):
         self._pending_entry_selection: WorklogEntry | None = None
         self._entry_style_map: dict[str, str] = {}
         self._allow_entry_selection = allow_entry_selection
+        self._display_timezone: ZoneInfo | None = None
         self.can_focus = True
+
+    def set_display_timezone(self, timezone: ZoneInfo | None) -> None:
+        self._display_timezone = timezone
+        self.refresh()
 
     def set_worklog_entries(self, entries: list[WorklogEntry]) -> None:
         self.worklog_entries = entries
@@ -102,12 +109,15 @@ class WorklogDayGrid(Static):
         return Text(' '.ljust(width))
 
     def _slot_index_for_entry(self, entry: WorklogEntry) -> int:
-        return int((entry.started.hour - 8) * 2 + entry.started.minute // 30)
+        started = entry.started
+        if self._display_timezone is not None:
+            started = started.astimezone(self._display_timezone)
+        return int((started.hour - 8) * 2 + started.minute // 30)
 
     def _entry_for_slot(self, slot: int) -> WorklogEntry | None:
         for entry in self.worklog_entries:
             start_slot = self._slot_index_for_entry(entry)
-            duration_slots = max(1, entry.time_spent_seconds // (30 * 60))
+            duration_slots = max(1, (entry.time_spent_seconds + (30 * 60) - 1) // (30 * 60))
             if start_slot <= slot < start_slot + duration_slots:
                 return entry
         return None
@@ -124,7 +134,7 @@ class WorklogDayGrid(Static):
     def _format_entry_line(self, entry: WorklogEntry, slot: int) -> str:
         start_slot = self._slot_index_for_entry(entry)
         slot_offset = slot - start_slot
-        duration_slots = max(1, entry.time_spent_seconds // (30 * 60))
+        duration_slots = max(1, (entry.time_spent_seconds + (30 * 60) - 1) // (30 * 60))
         if slot_offset == 0:
             return self._format_entry_label(entry)
         if slot_offset == 1 and duration_slots >= 4:
