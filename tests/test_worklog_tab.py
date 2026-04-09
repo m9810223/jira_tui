@@ -52,6 +52,21 @@ class FakeJiraClient:
                         'author': {'accountId': 'me', 'displayName': 'Test User'},
                         'started': '2026-04-09T09:00:00.000+0800',
                         'timeSpentSeconds': 3600,
+                        'comment': {
+                            'type': 'doc',
+                            'version': 1,
+                            'content': [
+                                {
+                                    'type': 'paragraph',
+                                    'content': [
+                                        {
+                                            'type': 'text',
+                                            'text': 'Focused implementation',
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
                     }
                 )
             ]
@@ -140,7 +155,19 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             grid = tab.query_one(WorklogDayGrid)
             rendered = grid._render_slot_line(2, 80).plain
             self.assertIn('09:00-10:00 (1h)', rendered)
-            self.assertIn('PROJ-1 Alpha task', rendered)
+            self.assertIn('PROJ-1', rendered)
+
+    async def test_existing_worklog_second_line_shows_comment_text(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            tab.set_selected_day(date(2026, 4, 9))
+            tab.refresh_day()
+            await pilot.pause()
+
+            grid = tab.query_one(WorklogDayGrid)
+            rendered = grid._render_slot_line(3, 80).plain
+            self.assertIn('Focused implementation', rendered)
 
     async def test_worklog_day_navigation_actions_change_selected_day(self) -> None:
         async with self.app.run_test() as pilot:
