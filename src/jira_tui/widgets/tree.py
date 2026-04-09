@@ -24,6 +24,7 @@ from ..renderers.issue_row import IssueRowRenderer
 from ..renderers.layout import TreeLayout
 from ..renderers.timeline import TimelineRenderer
 from ..worklog import clamp_remaining_estimate
+from ..worklog import collect_day_worklog_entries
 
 
 class JiraNodeType(Enum):
@@ -1139,14 +1140,29 @@ class JiraTree(Tree[JiraNodeData]):
             timezone = ZoneInfo(timezone_name or 'Asia/Taipei')
         except Exception:
             timezone = ZoneInfo('Asia/Taipei')
+        selected_day = datetime.now(timezone).date()
+        existing_entries = []
+        try:
+            client = self.app._get_jira_client()  # pyright: ignore[reportAttributeAccessIssue]
+            day_issues = client.search_day_worklog_issues_for_current_user(selected_day)
+            account_id = myself.get('accountId', '') if isinstance(myself, dict) else ''
+            existing_entries = collect_day_worklog_entries(
+                day_issues,
+                selected_day=selected_day,
+                account_id=account_id,
+                timezone=timezone,
+                fetch_issue_worklogs=client.get_issue_worklogs,
+            )
+        except Exception:
+            existing_entries = []
 
         self.app.push_screen(
             WorklogEditorModal(
                 issue_key=issue.key,
                 issue_summary=issue.fields.summary,
-                selected_day=datetime.now(timezone).date(),
+                selected_day=selected_day,
                 timezone=timezone,
-                existing_entries=[],
+                existing_entries=existing_entries,
             ),
             self._on_worklog_add_complete,
         )

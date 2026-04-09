@@ -419,6 +419,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
 
             self.assertEqual('WorklogEditorModal', pushed[-1].__class__.__name__)
+            self.assertEqual(1, len(pushed[-1]._existing_entries))  # type: ignore[attr-defined]
 
     async def test_submit_without_selected_issue_is_rejected(self) -> None:
         async with self.app.run_test() as pilot:

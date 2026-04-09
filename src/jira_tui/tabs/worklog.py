@@ -23,6 +23,7 @@ from ..worklog import DAY_START_HOUR
 from ..worklog import SLOT_MINUTES
 from ..worklog import WorklogEntry
 from ..worklog import clamp_remaining_estimate
+from ..worklog import collect_day_worklog_entries
 from ..worklog import filter_worklogs_for_day
 from ..worklog import format_duration_label
 from ..worklog import has_overlap
@@ -116,23 +117,12 @@ class WorklogTab(JiraClientMixin, Vertical):
 
         candidate_issues = client.search_active_sprint_subtasks_for_current_user()
         day_issues = client.search_day_worklog_issues_for_current_user(selected_day)
-        entries: list[WorklogEntry] = []
-        for issue in day_issues:
-            worklog_page = issue.fields.worklog
-            if worklog_page is None:
-                worklogs = client.get_issue_worklogs(issue.key)
-            elif worklog_page.total is not None and worklog_page.total > len(worklog_page.worklogs):
-                worklogs = client.get_issue_worklogs(issue.key)
-            else:
-                worklogs = worklog_page.worklogs
-            for worklog in worklogs:
-                entries.append(worklog_to_entry(worklog, issue))
-
-        filtered_entries = filter_worklogs_for_day(
-            entries,
+        filtered_entries = collect_day_worklog_entries(
+            day_issues,
             selected_day=selected_day,
             account_id=myself.get('accountId', ''),
             timezone=timezone,
+            fetch_issue_worklogs=client.get_issue_worklogs,
         )
 
         self.app.call_from_thread(
