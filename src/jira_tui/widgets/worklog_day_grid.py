@@ -7,10 +7,12 @@ from textual import events
 from textual.message import Message
 from textual.widgets import Static
 
+from ..worklog import DAY_START_HOUR
+from ..worklog import SLOT_MINUTES
 from ..worklog import SLOTS_PER_DAY
 from ..worklog import WorklogEntry
-from ..worklog import format_duration_label
 from ..worklog import normalize_slot_range
+from ..worklog import seconds_to_slots_ceil
 
 
 class WorklogDayGrid(Static):
@@ -67,6 +69,13 @@ class WorklogDayGrid(Static):
         self.post_message(self.SelectionChanged(start_slot, end_slot))
         self.refresh()
 
+    def _render_time_axis_label(self, slot: int) -> Text:
+        """Render a formatted time label for a given slot."""
+        hour = DAY_START_HOUR + (slot * SLOT_MINUTES) // 60
+        if slot % 2 == 0:
+            return Text(f"{hour:02d}:00 ", style="time-axis-hour")
+        return Text("  --  ", style="time-axis-half")
+
     def clear_draft(self) -> None:
         self.draft_slots = None
         self._drag_anchor_slot = None
@@ -112,12 +121,12 @@ class WorklogDayGrid(Static):
         started = entry.started
         if self._display_timezone is not None:
             started = started.astimezone(self._display_timezone)
-        return int((started.hour - 8) * 2 + started.minute // 30)
+        return int((started.hour - DAY_START_HOUR) * 2 + started.minute // SLOT_MINUTES)
 
     def _entry_for_slot(self, slot: int) -> WorklogEntry | None:
         for entry in self.worklog_entries:
             start_slot = self._slot_index_for_entry(entry)
-            duration_slots = max(1, (entry.time_spent_seconds + (30 * 60) - 1) // (30 * 60))
+            duration_slots = seconds_to_slots_ceil(entry.time_spent_seconds)
             if start_slot <= slot < start_slot + duration_slots:
                 return entry
         return None
@@ -134,7 +143,7 @@ class WorklogDayGrid(Static):
     def _format_entry_line(self, entry: WorklogEntry, slot: int) -> str:
         start_slot = self._slot_index_for_entry(entry)
         slot_offset = slot - start_slot
-        duration_slots = max(1, (entry.time_spent_seconds + (30 * 60) - 1) // (30 * 60))
+        duration_slots = seconds_to_slots_ceil(entry.time_spent_seconds)
         if slot_offset == 0:
             return self._format_entry_label(entry)
         if slot_offset == 1 and duration_slots >= 4:
