@@ -186,6 +186,24 @@ TabbedContent {
     color: $text-muted;
 }
 
+.time-axis-hour {
+    color: $primary;
+    text-style: bold;
+}
+
+.time-axis-half {
+    color: $text-muted;
+}
+
+.worklog-entry-base {
+    background: $surface;
+}
+
+.worklog-draft {
+    background: $primary 20%;
+    border-left: thick $primary;
+}
+
 #worklog-day-grid {
     width: 1fr;
     height: 1fr;
