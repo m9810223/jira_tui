@@ -21,6 +21,7 @@ class WorklogDayGrid(Static):
     _ENTRY_COLORS = [
         '#808aff', '#78c9ff', '#9b80ff', '#70e0cf', '#ff80ab', '#ffd54f'
     ]
+    _BG_COLORS = ['#1e1e1e', '#2a2a2a']
 
     class SelectionChanged(Message):
         """Emitted when the draft selection changes."""
@@ -44,6 +45,7 @@ class WorklogDayGrid(Static):
         self._drag_anchor_slot: int | None = None
         self._pending_entry_selection: WorklogEntry | None = None
         self._entry_style_map: dict[str, str] = {}
+        self._entry_bg_map: dict[str, str] = {}
         self._allow_entry_selection = allow_entry_selection
         self._display_timezone: ZoneInfo | None = None
         self.can_focus = True
@@ -55,12 +57,15 @@ class WorklogDayGrid(Static):
     def set_worklog_entries(self, entries: list[WorklogEntry]) -> None:
         self.worklog_entries = entries
         self._entry_style_map = {}
+        self._entry_bg_map = {}
         sorted_entries = sorted(
             entries,
             key=lambda entry: (entry.started, entry.ended, entry.issue_key, entry.worklog_id),
         )
         for index, entry in enumerate(sorted_entries):
-            self._entry_style_map[self._entry_identifier(entry)] = self._ENTRY_COLORS[index % len(self._ENTRY_COLORS)]
+            ident = self._entry_identifier(entry)
+            self._entry_style_map[ident] = self._ENTRY_COLORS[index % len(self._ENTRY_COLORS)]
+            self._entry_bg_map[ident] = self._BG_COLORS[index % 2]
         self.refresh()
 
     def set_draft_slots(self, start_slot: int, end_slot: int) -> None:
@@ -111,17 +116,19 @@ class WorklogDayGrid(Static):
         # 2. 處理現有 Entry
         entry = self._entry_for_slot(slot)
         if entry is not None:
-            start_slot = self._slot_index_for_entry(entry)
-            duration_slots = seconds_to_slots_ceil(entry.time_spent_seconds)
-            slot_offset = slot - start_slot
-            color = self._entry_style(entry)
+            ident = self._entry_identifier(entry)
+            bg_color = self._entry_bg_map.get(ident, self._BG_COLORS[0])
+            accent_color = self._entry_style(entry)
 
-            line = Text()
+            line = Text(style=f"on {bg_color}")
             # 左側重音線 (每一行都顯示，保持區塊感)
-            line.append("▌", style=f"bold {color}")
+            line.append("▌", style=f"bold {accent_color}")
 
             # 內容區域
             content = Text()
+            start_slot = self._slot_index_for_entry(entry)
+            duration_slots = seconds_to_slots_ceil(entry.time_spent_seconds)
+            slot_offset = slot - start_slot
             if slot_offset == 0:
                 content.append(f" {entry.issue_key}", style="bold")
                 content.append(f" {entry.issue_summary}")
