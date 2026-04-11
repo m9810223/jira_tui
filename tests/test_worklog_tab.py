@@ -9,6 +9,7 @@ from jira_tui.models import JiraIssue
 from jira_tui.models import JiraWorklog
 from jira_tui.screens.worklog_editor import WorklogDeleteResult
 from jira_tui.screens.worklog_editor import WorklogEditorResult
+from jira_tui.tabs.worklog import WorklogDayData
 from jira_tui.tabs.worklog import WorklogTab
 from jira_tui.tabs.my_issues import MyIssuesTab
 from jira_tui.widgets.tree import JiraTree
@@ -258,7 +259,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('PROJ-1', rendered)
             self.assertIn('Alpha task', rendered)
 
-    def test_one_hour_worklog_does_not_show_second_line_comment(self) -> None:
+    def test_one_hour_worklog_shows_accent_line_on_second_slot(self) -> None:
         tz = ZoneInfo('Asia/Taipei')
         entry = WorklogEntry(
             worklog_id='w1',
@@ -272,7 +273,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         grid = WorklogDayGrid()
         grid.set_worklog_entries([entry])
         rendered = grid._render_slot_line(3, 80).plain.strip()
-        self.assertEqual('', rendered)
+        self.assertEqual('▌ Focused implementation', rendered)
 
     def test_two_hour_worklog_second_line_shows_comment_text(self) -> None:
         tz = ZoneInfo('Asia/Taipei')
@@ -338,7 +339,8 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         grid = WorklogDayGrid()
         grid.set_worklog_entries([first_entry, second_entry, third_entry])
         self.assertNotEqual(grid._entry_style(first_entry), grid._entry_style(second_entry))
-        self.assertEqual(grid._entry_style(first_entry), grid._entry_style(third_entry))
+        self.assertNotEqual(grid._entry_style(second_entry), grid._entry_style(third_entry))
+        self.assertNotEqual(grid._entry_style(first_entry), grid._entry_style(third_entry))
 
     def test_grid_uses_content_width_for_rendered_lines(self) -> None:
         grid = MeasuredWorklogDayGrid(content_width=50, size_width=52, gutter_top=1)
@@ -388,10 +390,12 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
 
             tab._apply_day_data(
                 1,
-                stale_day,
-                ZoneInfo('Asia/Taipei'),
-                self.client.active_sprint_issues,
-                [],
+                WorklogDayData(
+                    selected_day=stale_day,
+                    timezone=ZoneInfo('Asia/Taipei'),
+                    candidate_issues=self.client.active_sprint_issues,
+                    worklog_entries=[],
+                ),
             )
             await pilot.pause()
             self.assertEqual(latest_day, tab.selected_day)
@@ -410,6 +414,22 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(loading.has_class('hidden'))
             status = tab.query_one('#worklog-status', Static)
             self.assertEqual('load failed', str(status.render()))
+
+    async def test_stale_day_load_error_callback_does_not_override_latest_request(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            tab._day_load_request_id = 2
+            tab.query_one('#worklog-status', Static).update('latest status')
+            loading = tab.query_one('#worklog-loading', LoadingIndicator)
+            loading.remove_class('hidden')
+
+            tab._handle_day_load_error(1, 'stale error')
+            await pilot.pause()
+
+            self.assertFalse(loading.has_class('hidden'))
+            status = tab.query_one('#worklog-status', Static)
+            self.assertEqual('latest status', str(status.render()))
 
     async def test_mouse_drag_creates_a_draft_selection(self) -> None:
         async with self.app.run_test() as pilot:
@@ -503,41 +523,46 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([{'issue_key': 'PROJ-1', 'worklog_id': 'w1'}], self.client.deleted_worklogs)
 
     async def test_issue_tree_can_open_quick_add_worklog_modal_for_subtask(self) -> None:
-        async with self.app.run_test() as pilot:
-            self.app.query_one(TabbedContent).active = 'my-issues-tab'
-            issues_tab = self.app.query_one(MyIssuesTab)
-            issues_tab._on_search_complete(
-                [
-                    make_tree_issue('PROJ-100', 'Parent story', issue_type='Story'),
-                    make_tree_issue(
-                        'PROJ-101',
-                        'Child subtask',
-                        issue_type='Sub-task',
-                        parent_key='PROJ-100',
-                        parent_summary='Parent story',
-                    ),
-                ],
-                [],
-            )
-            await pilot.pause()
+        from unittest.mock import patch
+        with patch('jira_tui.widgets.tree.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2026, 4, 9, 12, 0, tzinfo=ZoneInfo('Asia/Taipei'))
+            async with self.app.run_test() as pilot:
+                self.app.query_one(TabbedContent).active = 'my-issues-tab'
+                await pilot.pause()
+                
+                issues_tab = self.app.query_one(MyIssuesTab)
+                issues_tab._on_search_complete(
+                    [
+                        make_tree_issue('PROJ-100', 'Parent story', issue_type='Story'),
+                        make_tree_issue(
+                            'PROJ-101',
+                            'Child subtask',
+                            issue_type='Sub-task',
+                            parent_key='PROJ-100',
+                            parent_summary='Parent story',
+                        ),
+                    ],
+                    [],
+                )
+                await pilot.pause()
 
-            tree = issues_tab.query_one(JiraTree)
-            subtask_node = next(
-                node for node in tree._tree_nodes.values()
-                if node.data and node.data.issue and node.data.issue.key == 'PROJ-101'
-            )
-            pushed: list[object] = []
+                tree = issues_tab.query_one(JiraTree)
+                subtask_node = next(
+                    node for node in tree._tree_nodes.values()
+                    if node.data and node.data.issue and node.data.issue.key == 'PROJ-101'
+                )
+                pushed: list[object] = []
 
-            def _capture_push(screen, callback=None):
-                pushed.append(screen)
-                return None
+                def _capture_push(screen, callback=None):
+                    pushed.append(screen)
+                    return None
 
-            self.app.push_screen = _capture_push  # type: ignore[method-assign]
-            tree._open_add_worklog_modal(subtask_node.data.issue)  # type: ignore[arg-type]
-            await pilot.pause()
+                self.app.push_screen = _capture_push  # type: ignore[method-assign]
+                tree._open_add_worklog_modal(subtask_node.data.issue)  # type: ignore[arg-type]
+                await pilot.pause()
 
-            self.assertEqual('WorklogEditorModal', pushed[-1].__class__.__name__)
-            self.assertEqual(1, len(pushed[-1]._existing_entries))  # type: ignore[attr-defined]
+                self.assertEqual('WorklogEditorModal', pushed[-1].__class__.__name__)
+                self.assertEqual(1, len(pushed[-1]._existing_entries))  # type: ignore[attr-defined]
 
     async def test_submit_without_selected_issue_is_rejected(self) -> None:
         async with self.app.run_test() as pilot:

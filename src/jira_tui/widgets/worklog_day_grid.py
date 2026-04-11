@@ -18,10 +18,9 @@ from ..worklog import seconds_to_slots_ceil
 class WorklogDayGrid(Static):
     """A simple day-view grid for worklog selection."""
 
-    _ENTRY_STYLES = (
-        'bold black on #808aff',
-        'bold black on #78c9ff',
-    )
+    _ENTRY_COLORS = [
+        '#808aff', '#78c9ff', '#9b80ff', '#70e0cf', '#ff80ab', '#ffd54f'
+    ]
 
     class SelectionChanged(Message):
         """Emitted when the draft selection changes."""
@@ -61,7 +60,7 @@ class WorklogDayGrid(Static):
             key=lambda entry: (entry.started, entry.ended, entry.issue_key, entry.worklog_id),
         )
         for index, entry in enumerate(sorted_entries):
-            self._entry_style_map[self._entry_identifier(entry)] = self._ENTRY_STYLES[index % 2]
+            self._entry_style_map[self._entry_identifier(entry)] = self._ENTRY_COLORS[index % len(self._ENTRY_COLORS)]
         self.refresh()
 
     def set_draft_slots(self, start_slot: int, end_slot: int) -> None:
@@ -73,8 +72,8 @@ class WorklogDayGrid(Static):
         """Render a formatted time label for a given slot."""
         hour = DAY_START_HOUR + (slot * SLOT_MINUTES) // 60
         if slot % 2 == 0:
-            return Text(f"{hour:02d}:00 ", style="time-axis-hour")
-        return Text("  --  ", style="time-axis-half")
+            return Text(f"{hour:02d}:00 ", style="bold")
+        return Text("  --  ", style="dim")
 
     def clear_draft(self) -> None:
         self.draft_slots = None
@@ -100,22 +99,43 @@ class WorklogDayGrid(Static):
         return result
 
     def _render_slot_line(self, slot: int, width: int) -> Text:
-        label = ' '
+        # 1. 處理 Draft 選擇
         if self.draft_slots is not None and self.draft_slots[0] <= slot < self.draft_slots[1]:
-            if slot == self.draft_slots[0]:
-                label = ' Draft selection'
-            else:
-                label = ' '
-            return Text(label.ljust(width), style='reverse')
-
-        entry = self._entry_for_slot(slot)
-        if entry is not None:
-            text = self._format_entry_line(entry, slot)
-            line = Text(text, style=self._entry_style(entry))
-            line.truncate(width, overflow='ellipsis', pad=True)
+            line = Text()
+            is_start = slot == self.draft_slots[0]
+            label = " Draft selection" if is_start else ""
+            line.append("▌", style="bold")
+            line.append(label.ljust(width - 1), style="reverse")
             return line
 
-        return Text(' '.ljust(width))
+        # 2. 處理現有 Entry
+        entry = self._entry_for_slot(slot)
+        if entry is not None:
+            start_slot = self._slot_index_for_entry(entry)
+            duration_slots = seconds_to_slots_ceil(entry.time_spent_seconds)
+            slot_offset = slot - start_slot
+            color = self._entry_style(entry)
+
+            line = Text()
+            # 左側重音線 (每一行都顯示，保持區塊感)
+            line.append("▌", style=f"bold {color}")
+
+            # 內容區域
+            content = Text()
+            if slot_offset == 0:
+                content.append(f" {entry.issue_key}", style="bold")
+                content.append(f" {entry.issue_summary}")
+            elif slot_offset == 1 and duration_slots >= 2:
+                # 恢復 1 小時 (2 slots) 即可顯示內容的邏輯，讓空間利用更好
+                if entry.comment_text:
+                    content.append(f" {entry.comment_text}", style="italic")
+
+            content.truncate(width - 1, pad=True)
+            line.append_text(content)
+            return line
+
+        # 3. 空白時段
+        return Text(" ".ljust(width))
 
     def _slot_index_for_entry(self, entry: WorklogEntry) -> int:
         started = entry.started
@@ -138,7 +158,8 @@ class WorklogDayGrid(Static):
         return entry.worklog_id or f'{entry.issue_key}:{entry.started.isoformat()}'
 
     def _entry_style(self, entry: WorklogEntry) -> str:
-        return self._entry_style_map.get(self._entry_identifier(entry), self._ENTRY_STYLES[0])
+        """Get the accent color for a worklog entry."""
+        return self._entry_style_map.get(self._entry_identifier(entry), self._ENTRY_COLORS[0])
 
     def _format_entry_line(self, entry: WorklogEntry, slot: int) -> str:
         start_slot = self._slot_index_for_entry(entry)
