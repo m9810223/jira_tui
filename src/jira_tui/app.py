@@ -105,10 +105,10 @@ class JiraDashboard(App):
                 yield ApiTab()
             with TabPane('Issues', id='my-issues-tab'):
                 yield MyIssuesTab()
-            with TabPane('JQL', id='jql-tab'):
-                yield JqlTab()
             with TabPane('Worklog', id='worklog-tab'):
                 yield WorklogTab()
+            with TabPane('JQL', id='jql-tab'):
+                yield JqlTab()
         yield Footer()
 
     def __init__(self):
