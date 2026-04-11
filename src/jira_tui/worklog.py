@@ -19,6 +19,21 @@ SLOT_SECONDS = SLOT_MINUTES * 60
 SLOTS_PER_DAY = (DAY_END_HOUR - DAY_START_HOUR) * 60 // SLOT_MINUTES
 
 
+def seconds_to_slots_ceil(seconds: int) -> int:
+    """Convert seconds into 30-minute slots with ceil behavior."""
+    if seconds <= 0:
+        return 1
+    return (seconds + SLOT_SECONDS - 1) // SLOT_SECONDS
+
+
+def resolve_timezone(timezone_name: str | None, fallback: str = 'Asia/Taipei') -> ZoneInfo:
+    """Resolve timezone with a consistent fallback."""
+    try:
+        return ZoneInfo(timezone_name or fallback)
+    except Exception:
+        return ZoneInfo(fallback)
+
+
 @dataclass(slots=True)
 class WorklogEntry:
     """A day-view worklog block."""
@@ -64,7 +79,7 @@ def selection_to_seconds(start_slot: int, end_slot: int) -> int:
 def datetime_to_slot_range(started: datetime, time_spent_seconds: int) -> tuple[int, int]:
     """Convert a worklog datetime range into grid slots."""
     start_slot = int((started.hour - DAY_START_HOUR) * 2 + started.minute // SLOT_MINUTES)
-    duration_slots = max(1, (time_spent_seconds + SLOT_SECONDS - 1) // SLOT_SECONDS)
+    duration_slots = seconds_to_slots_ceil(time_spent_seconds)
     return start_slot, start_slot + duration_slots
 
 

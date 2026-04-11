@@ -12,6 +12,7 @@ from jira_tui.worklog import filter_candidate_issues
 from jira_tui.worklog import filter_worklogs_for_day
 from jira_tui.worklog import has_overlap
 from jira_tui.worklog import normalize_slot_range
+from jira_tui.worklog import seconds_to_slots_ceil
 from jira_tui.worklog import selection_to_datetimes
 from jira_tui.worklog import selection_to_seconds
 
@@ -63,6 +64,10 @@ class WorklogDomainTests(unittest.TestCase):
             45 * 60,
         )
         self.assertEqual((2, 4), (start_slot, end_slot))
+
+    def test_seconds_to_slots_ceil_rounds_15_and_29_minutes_to_single_slot(self) -> None:
+        self.assertEqual(1, seconds_to_slots_ceil(15 * 60))
+        self.assertEqual(1, seconds_to_slots_ceil(29 * 60))
 
     def test_clamp_remaining_estimate_stops_at_zero(self) -> None:
         self.assertEqual(0, clamp_remaining_estimate(1800, 3600))

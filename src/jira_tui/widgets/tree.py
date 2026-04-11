@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from enum import auto
-from zoneinfo import ZoneInfo
 
 from rich.style import Style
 from rich.text import Text
@@ -25,6 +24,7 @@ from ..renderers.layout import TreeLayout
 from ..renderers.timeline import TimelineRenderer
 from ..worklog import clamp_remaining_estimate
 from ..worklog import collect_day_worklog_entries
+from ..worklog import resolve_timezone
 
 
 class JiraNodeType(Enum):
@@ -1136,10 +1136,7 @@ class JiraTree(Tree[JiraNodeData]):
 
         myself = getattr(self.app, 'myself', None)
         timezone_name = myself.get('timeZone') if isinstance(myself, dict) else 'Asia/Taipei'
-        try:
-            timezone = ZoneInfo(timezone_name or 'Asia/Taipei')
-        except Exception:
-            timezone = ZoneInfo('Asia/Taipei')
+        timezone = resolve_timezone(timezone_name)
         selected_day = datetime.now(timezone).date()
         existing_entries = []
         try:

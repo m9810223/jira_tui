@@ -1,9 +1,11 @@
 """Worklog day-view tab."""
 
+from dataclasses import dataclass
 from datetime import date
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from rich.text import Text
 from textual import on
 from textual import work
 from textual.app import ComposeResult
@@ -24,15 +26,31 @@ from ..worklog import SLOT_MINUTES
 from ..worklog import WorklogEntry
 from ..worklog import clamp_remaining_estimate
 from ..worklog import collect_day_worklog_entries
-from ..worklog import filter_worklogs_for_day
 from ..worklog import format_duration_label
 from ..worklog import has_overlap
+from ..worklog import SLOTS_PER_DAY
+from ..worklog import resolve_timezone
 from ..worklog import selection_to_datetimes
 from ..worklog import selection_to_seconds
-from ..worklog import worklog_to_entry
 from ..widgets.worklog_day_grid import WorklogDayGrid
 from ..widgets.worklog_issue_picker import WorklogIssuePicker
 from ._mixin import JiraClientMixin
+
+
+@dataclass(slots=True)
+class WorklogDayData:
+    selected_day: date
+    timezone: ZoneInfo
+    candidate_issues: list[JiraIssue]
+    worklog_entries: list[WorklogEntry]
+
+
+@dataclass(slots=True)
+class WorklogTabState:
+    selected_day: date
+    timezone: ZoneInfo
+    candidate_issues: list[JiraIssue]
+    worklog_entries: list[WorklogEntry]
 
 
 class WorklogTab(JiraClientMixin, Vertical):
@@ -40,15 +58,17 @@ class WorklogTab(JiraClientMixin, Vertical):
 
     def __init__(self) -> None:
         super().__init__()
-        self._selected_day = datetime.now().date()
-        self._timezone = ZoneInfo('Asia/Taipei')
-        self._worklog_entries: list[WorklogEntry] = []
-        self._candidate_issues: list[JiraIssue] = []
+        self._state = WorklogTabState(
+            selected_day=datetime.now().date(),
+            timezone=resolve_timezone(None),
+            candidate_issues=[],
+            worklog_entries=[],
+        )
         self._day_load_request_id = 0
 
     @property
     def selected_day(self) -> date:
-        return self._selected_day
+        return self._state.selected_day
 
     @property
     def issue_picker(self) -> WorklogIssuePicker:
@@ -69,26 +89,38 @@ class WorklogTab(JiraClientMixin, Vertical):
         yield Static('', id='worklog-status')
 
     def on_mount(self) -> None:
-        self._selected_day = self._today()
+        self._state = WorklogTabState(
+            selected_day=self._today(),
+            timezone=self._state.timezone,
+            candidate_issues=self._state.candidate_issues,
+            worklog_entries=self._state.worklog_entries,
+        )
         self._update_time_axis()
         self._update_selected_day_label()
         self._update_draft_summary()
         self.refresh_day()
 
     def _today(self) -> date:
-        return datetime.now(self._timezone).date()
+        return datetime.now(self._state.timezone).date()
 
     def set_selected_day(self, selected_day: date) -> None:
-        self._selected_day = selected_day
+        self._state = WorklogTabState(
+            selected_day=selected_day,
+            timezone=self._state.timezone,
+            candidate_issues=self._state.candidate_issues,
+            worklog_entries=self._state.worklog_entries,
+        )
         self._update_selected_day_label()
         self._update_draft_summary()
 
     def go_to_previous_day(self) -> None:
-        self.set_selected_day(self._selected_day.fromordinal(self._selected_day.toordinal() - 1))
+        selected_day = self.selected_day
+        self.set_selected_day(selected_day.fromordinal(selected_day.toordinal() - 1))
         self.refresh_day()
 
     def go_to_next_day(self) -> None:
-        self.set_selected_day(self._selected_day.fromordinal(self._selected_day.toordinal() + 1))
+        selected_day = self.selected_day
+        self.set_selected_day(selected_day.fromordinal(selected_day.toordinal() + 1))
         self.refresh_day()
 
     def go_to_today(self) -> None:
@@ -103,7 +135,7 @@ class WorklogTab(JiraClientMixin, Vertical):
         request_id = self._day_load_request_id
         self.query_one('#worklog-loading', LoadingIndicator).remove_class('hidden')
         self.query_one('#worklog-status', Static).update('Loading worklog data...')
-        self._load_day_data(client, self._selected_day, request_id)
+        self._load_day_data(client, self.selected_day, request_id)
 
     @work(thread=True)
     def _load_day_data(self, client: JiraClient, selected_day: date, request_id: int) -> None:
@@ -113,29 +145,16 @@ class WorklogTab(JiraClientMixin, Vertical):
                 myself = client.get_myself()
                 self.app.myself = myself  # pyright: ignore[reportAttributeAccessIssue]
 
-            timezone_name = myself.get('timeZone') or 'Asia/Taipei'
-            try:
-                timezone = ZoneInfo(timezone_name)
-            except Exception:
-                timezone = ZoneInfo('Asia/Taipei')
-
-            candidate_issues = client.search_active_sprint_subtasks_for_current_user()
-            day_issues = client.search_day_worklog_issues_for_current_user(selected_day)
-            filtered_entries = collect_day_worklog_entries(
-                day_issues,
+            day_data = self._build_day_load_data(
+                client,
                 selected_day=selected_day,
-                account_id=myself.get('accountId', ''),
-                timezone=timezone,
-                fetch_issue_worklogs=client.get_issue_worklogs,
+                myself=myself,
             )
 
             self.app.call_from_thread(
                 self._apply_day_data,
                 request_id,
-                selected_day,
-                timezone,
-                candidate_issues,
-                filtered_entries,
+                day_data,
             )
         except Exception as exc:
             self.app.call_from_thread(
@@ -144,27 +163,45 @@ class WorklogTab(JiraClientMixin, Vertical):
                 f'Failed to load worklog data: {exc}',
             )
 
+    @staticmethod
+    def _build_day_load_data(client: JiraClient, *, selected_day: date, myself: dict) -> WorklogDayData:
+        timezone = resolve_timezone(myself.get('timeZone'))
+        candidate_issues = client.search_active_sprint_subtasks_for_current_user()
+        day_issues = client.search_day_worklog_issues_for_current_user(selected_day)
+        filtered_entries = collect_day_worklog_entries(
+            day_issues,
+            selected_day=selected_day,
+            account_id=myself.get('accountId', ''),
+            timezone=timezone,
+            fetch_issue_worklogs=client.get_issue_worklogs,
+        )
+        return WorklogDayData(
+            selected_day=selected_day,
+            timezone=timezone,
+            candidate_issues=candidate_issues,
+            worklog_entries=filtered_entries,
+        )
+
     def _apply_day_data(
         self,
         request_id: int,
-        selected_day: date,
-        timezone: ZoneInfo,
-        candidate_issues: list[JiraIssue],
-        worklog_entries: list[WorklogEntry],
+        day_data: WorklogDayData,
     ) -> None:
         if request_id != self._day_load_request_id:
             return
-        self._selected_day = selected_day
-        self._timezone = timezone
-        self._candidate_issues = candidate_issues
-        self._worklog_entries = worklog_entries
-        self.issue_picker.set_issues(candidate_issues)
+        self._state = WorklogTabState(
+            selected_day=day_data.selected_day,
+            timezone=day_data.timezone,
+            candidate_issues=day_data.candidate_issues,
+            worklog_entries=day_data.worklog_entries,
+        )
+        self.issue_picker.set_issues(day_data.candidate_issues)
         grid = self.query_one(WorklogDayGrid)
-        grid.set_display_timezone(timezone)
-        grid.set_worklog_entries(worklog_entries)
+        grid.set_display_timezone(day_data.timezone)
+        grid.set_worklog_entries(day_data.worklog_entries)
         self.query_one('#worklog-loading', LoadingIndicator).add_class('hidden')
         self.query_one('#worklog-status', Static).update(
-            f'{len(worklog_entries)} worklogs, {len(candidate_issues)} candidate subtasks'
+            f'{len(day_data.worklog_entries)} worklogs, {len(day_data.candidate_issues)} candidate subtasks'
         )
         self._update_selected_day_label()
         self._update_draft_summary()
@@ -188,12 +225,12 @@ class WorklogTab(JiraClientMixin, Vertical):
 
         start_slot, end_slot = grid.draft_slots
         started, ended = selection_to_datetimes(
-            self._selected_day,
+            self.selected_day,
             start_slot,
             end_slot,
-            self._timezone,
+            self._state.timezone,
         )
-        if has_overlap(started, ended, self._worklog_entries):
+        if has_overlap(started, ended, self._state.worklog_entries):
             self._set_status('The selected range overlaps an existing worklog.', severity='error')
             return
 
@@ -207,11 +244,11 @@ class WorklogTab(JiraClientMixin, Vertical):
         )
         self._submit_worklog(
             client,
-            issue,
-            started,
-            selection_to_seconds(start_slot, end_slot),
-            self.issue_picker.get_message(),
-            remaining_estimate_seconds,
+                issue,
+                started,
+                selection_to_seconds(start_slot, end_slot),
+                self.issue_picker.get_message(),
+                remaining_estimate_seconds,
         )
 
     def open_existing_worklog_editor(self, entry: WorklogEntry) -> None:
@@ -223,9 +260,9 @@ class WorklogTab(JiraClientMixin, Vertical):
             WorklogEditorModal(
                 issue_key=entry.issue_key,
                 issue_summary=entry.issue_summary,
-                selected_day=self._selected_day,
-                timezone=self._timezone,
-                existing_entries=self._worklog_entries,
+                selected_day=self.selected_day,
+                timezone=self._state.timezone,
+                existing_entries=self._state.worklog_entries,
                 current_entry=entry,
             ),
             self._on_worklog_editor_complete,
@@ -337,18 +374,25 @@ class WorklogTab(JiraClientMixin, Vertical):
         self.app.notify(message, severity=severity, timeout=2)
 
     def _update_time_axis(self) -> None:
-        axis = self.query_one('#worklog-time-axis', Static)
-        labels = ['']
-        total_slots = (DAY_END_HOUR - DAY_START_HOUR) * 60 // SLOT_MINUTES
-        for slot in range(total_slots):
-            hour = DAY_START_HOUR + (slot * SLOT_MINUTES) // 60
-            minute = (slot * SLOT_MINUTES) % 60
-            labels.append(f'{hour:02d}:{minute:02d}')
-        axis.update('\n'.join(labels))
+        try:
+            grid = self.query_one(WorklogDayGrid)
+            axis = self.query_one('#worklog-time-axis', Static)
+            
+            result = Text()
+            # 增加一個空白行以與 Toolbar 對齊
+            result.append("\n")
+            for slot in range(SLOTS_PER_DAY):
+                if slot > 0:
+                    result.append("\n")
+                result.append_text(grid._render_time_axis_label(slot))
+            
+            axis.update(result)
+        except Exception:
+            pass
 
     def _update_selected_day_label(self) -> None:
         label = self.query_one('#worklog-date-label', Static)
-        label.update(self._selected_day.strftime('%Y-%m-%d'))
+        label.update(self.selected_day.strftime('%Y-%m-%d'))
 
     def _update_draft_summary(self) -> None:
         label = self.query_one('#worklog-draft-summary', Static)
@@ -358,10 +402,10 @@ class WorklogTab(JiraClientMixin, Vertical):
             return
         start_slot, end_slot = grid.draft_slots
         started, ended = selection_to_datetimes(
-            self._selected_day,
+            self.selected_day,
             start_slot,
             end_slot,
-            self._timezone,
+            self._state.timezone,
         )
         duration = format_duration_label(selection_to_seconds(start_slot, end_slot))
         label.update(f'{started:%H:%M}-{ended:%H:%M} ({duration})')
