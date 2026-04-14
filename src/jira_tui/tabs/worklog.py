@@ -387,21 +387,21 @@ class WorklogTab(JiraClientMixin, Vertical):
         self._set_status(message, severity='error')
 
     def _update_time_axis(self) -> None:
-        try:
-            grid = self.query_one(WorklogDayGrid)
-            axis = self.query_one('#worklog-time-axis', Static)
-            
-            result = Text()
-            # 增加一個空白行以與 Toolbar 對齊
-            result.append("\n")
-            for slot in range(SLOTS_PER_DAY):
-                if slot > 0:
-                    result.append("\n")
-                result.append_text(grid._render_time_axis_label(slot))
-            
-            axis.update(result)
-        except Exception:
-            pass
+        if not self.is_mounted:
+            return
+
+        grid = self.query_one(WorklogDayGrid)
+        axis = self.query_one('#worklog-time-axis', Static)
+
+        result = Text()
+        # 增加一個空白行以與 Toolbar 對齊
+        result.append('\n')
+        for slot in range(SLOTS_PER_DAY):
+            if slot > 0:
+                result.append('\n')
+            result.append_text(grid._render_time_axis_label(slot))
+
+        axis.update(result)
 
     def _update_selected_day_label(self) -> None:
         label = self.query_one('#worklog-date-label', Static)
