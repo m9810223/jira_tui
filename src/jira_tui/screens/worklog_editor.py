@@ -14,6 +14,8 @@ from textual.widgets import Button
 from textual.widgets import Label
 from textual.widgets import Static
 
+from ..worklog import DAY_START_HOUR
+from ..worklog import SLOTS_PER_DAY
 from ..worklog import WorklogEntry
 from ..worklog import datetime_to_slot_range
 from ..worklog import format_duration_label
@@ -103,14 +105,12 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
 
     def _build_axis_labels(self) -> str:
         labels = ['']
-        hour = 8
-        minute = 0
-        for _ in range(24):
-            labels.append(f'{hour:02d}:{minute:02d}')
-            minute += 30
-            if minute >= 60:
-                hour += 1
-                minute = 0
+        for slot in range(SLOTS_PER_DAY):
+            if slot % 2 == 0:
+                hour = DAY_START_HOUR + slot // 2
+                labels.append(f'{hour:02d}:00 ')
+            else:
+                labels.append('  --  ')
         return '\n'.join(labels)
 
     def _update_summary(self) -> None:
