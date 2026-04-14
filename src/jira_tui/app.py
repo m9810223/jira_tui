@@ -50,9 +50,6 @@ class JiraDashboard(App):
         Binding('m', 'move_mark', '移動 Issue'),
         Binding('T', 'edit_status', '編輯 Status'),
         Binding('l', 'add_worklog', 'Add Worklog'),
-        Binding('alt+left', 'worklog_prev_day', 'Worklog 前一天'),
-        Binding('alt+right', 'worklog_next_day', 'Worklog 下一天'),
-        Binding('alt+t', 'worklog_today', 'Worklog 今天'),
     ]
 
     timeline_scroll_offset: reactive[int] = reactive(0)
@@ -569,13 +566,13 @@ class JiraDashboard(App):
             tree.action_add_worklog()
 
     def action_worklog_prev_day(self) -> None:
-        """Worklog 前一天"""
+        """前一天"""
         self.query_one(WorklogTab).go_to_previous_day()
 
     def action_worklog_next_day(self) -> None:
-        """Worklog 下一天"""
+        """下一天"""
         self.query_one(WorklogTab).go_to_next_day()
 
     def action_worklog_today(self) -> None:
-        """Worklog 今天"""
+        """今天"""
         self.query_one(WorklogTab).go_to_today()

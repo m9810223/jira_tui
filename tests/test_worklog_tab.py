@@ -234,6 +234,15 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         self.client = FakeJiraClient()
         self.app = WorklogTestApp(self.client)
 
+    def test_worklog_navigation_shortcuts_are_not_bound(self) -> None:
+        binding_keys = {
+            binding[0] if isinstance(binding, tuple) else binding.key
+            for binding in JiraDashboard.BINDINGS
+        }
+        self.assertNotIn('alt+left', binding_keys)
+        self.assertNotIn('alt+right', binding_keys)
+        self.assertNotIn('alt+t', binding_keys)
+
     async def test_worklog_tab_defaults_to_today_and_loads_existing_blocks(self) -> None:
         async with self.app.run_test() as pilot:
             self.app.query_one(TabbedContent).active = 'worklog-tab'
