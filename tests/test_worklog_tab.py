@@ -262,6 +262,15 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(date(2026, 4, 9), tab.selected_day)
             self.assertEqual(1, len(grid.worklog_entries))
 
+    async def test_worklog_time_axis_is_visible_after_mount(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            await pilot.pause()
+
+            axis = tab.query_one('#worklog-time-axis', Static)
+            self.assertIn('08:00', str(axis.render()))
+
     async def test_existing_worklog_first_line_shows_issue_key_and_summary(self) -> None:
         async with self.app.run_test() as pilot:
             self.app.query_one(TabbedContent).active = 'worklog-tab'

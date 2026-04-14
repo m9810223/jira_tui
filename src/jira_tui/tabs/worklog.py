@@ -387,9 +387,6 @@ class WorklogTab(JiraClientMixin, Vertical):
         self._set_status(message, severity='error')
 
     def _update_time_axis(self) -> None:
-        if not self.is_mounted:
-            return
-
         grid = self.query_one(WorklogDayGrid)
         axis = self.query_one('#worklog-time-axis', Static)
 
