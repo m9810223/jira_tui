@@ -47,7 +47,6 @@ class WorklogClientTests(unittest.TestCase):
             started=datetime.fromisoformat('2026-04-09T08:00:00+00:00'),
             time_spent_seconds=7200,
             comment_text='test',
-            remaining_estimate_seconds=0,
         )
 
         method, endpoint, kwargs = client.calls[-1]

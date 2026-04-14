@@ -20,15 +20,11 @@ from ..models import JiraIssue
 from ..screens.worklog_editor import WorklogDeleteResult
 from ..screens.worklog_editor import WorklogEditorModal
 from ..screens.worklog_editor import WorklogEditorResult
-from ..worklog import DAY_END_HOUR
-from ..worklog import DAY_START_HOUR
-from ..worklog import SLOT_MINUTES
+from ..worklog import SLOTS_PER_DAY
 from ..worklog import WorklogEntry
-from ..worklog import clamp_remaining_estimate
 from ..worklog import collect_day_worklog_entries
 from ..worklog import format_duration_label
 from ..worklog import has_overlap
-from ..worklog import SLOTS_PER_DAY
 from ..worklog import resolve_timezone
 from ..worklog import selection_to_datetimes
 from ..worklog import selection_to_seconds
@@ -238,17 +234,13 @@ class WorklogTab(JiraClientMixin, Vertical):
         if not client:
             return
 
-        remaining_estimate_seconds = clamp_remaining_estimate(
-            issue.fields.time_estimate,
-            selection_to_seconds(start_slot, end_slot),
-        )
+        selected_seconds = selection_to_seconds(start_slot, end_slot)
         self._submit_worklog(
             client,
-                issue,
-                started,
-                selection_to_seconds(start_slot, end_slot),
-                self.issue_picker.get_message(),
-                remaining_estimate_seconds,
+            issue,
+            started,
+            selected_seconds,
+            self.issue_picker.get_message(),
         )
 
     def open_existing_worklog_editor(self, entry: WorklogEntry) -> None:
@@ -294,7 +286,6 @@ class WorklogTab(JiraClientMixin, Vertical):
                 result.started,
                 result.time_spent_seconds,
                 result.comment_text,
-                None,
             )
             return
 
@@ -315,15 +306,20 @@ class WorklogTab(JiraClientMixin, Vertical):
         started: datetime,
         time_spent_seconds: int,
         comment_text: str,
-        remaining_estimate_seconds: int | None,
     ) -> None:
-        client.add_issue_worklog(
-            issue.key,
-            started=started,
-            time_spent_seconds=time_spent_seconds,
-            comment_text=comment_text,
-            remaining_estimate_seconds=remaining_estimate_seconds,
-        )
+        try:
+            client.add_issue_worklog(
+                issue.key,
+                started=started,
+                time_spent_seconds=time_spent_seconds,
+                comment_text=comment_text,
+            )
+        except Exception as exc:
+            self.app.call_from_thread(
+                self._handle_background_error,
+                f'Failed to add worklog for {issue.key}: {exc}',
+            )
+            return
         self.app.call_from_thread(self._after_submit, issue.key)
 
     @work(thread=True)
@@ -336,13 +332,20 @@ class WorklogTab(JiraClientMixin, Vertical):
         time_spent_seconds: int,
         comment_text: str,
     ) -> None:
-        client.update_issue_worklog(
-            issue_key,
-            worklog_id,
-            started=started,
-            time_spent_seconds=time_spent_seconds,
-            comment_text=comment_text,
-        )
+        try:
+            client.update_issue_worklog(
+                issue_key,
+                worklog_id,
+                started=started,
+                time_spent_seconds=time_spent_seconds,
+                comment_text=comment_text,
+            )
+        except Exception as exc:
+            self.app.call_from_thread(
+                self._handle_background_error,
+                f'Failed to update worklog for {issue_key}: {exc}',
+            )
+            return
         self.app.call_from_thread(self._after_update, issue_key)
 
     @work(thread=True)
@@ -352,7 +355,14 @@ class WorklogTab(JiraClientMixin, Vertical):
         issue_key: str,
         worklog_id: str,
     ) -> None:
-        client.delete_issue_worklog(issue_key, worklog_id)
+        try:
+            client.delete_issue_worklog(issue_key, worklog_id)
+        except Exception as exc:
+            self.app.call_from_thread(
+                self._handle_background_error,
+                f'Failed to delete worklog for {issue_key}: {exc}',
+            )
+            return
         self.app.call_from_thread(self._after_delete, issue_key)
 
     def _after_submit(self, issue_key: str) -> None:
@@ -372,6 +382,9 @@ class WorklogTab(JiraClientMixin, Vertical):
     def _set_status(self, message: str, *, severity: str) -> None:
         self.query_one('#worklog-status', Static).update(message)
         self.app.notify(message, severity=severity, timeout=2)
+
+    def _handle_background_error(self, message: str) -> None:
+        self._set_status(message, severity='error')
 
     def _update_time_axis(self) -> None:
         try:

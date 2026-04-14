@@ -22,7 +22,6 @@ from ..screens.worklog_editor import WorklogEditorResult
 from ..renderers.issue_row import IssueRowRenderer
 from ..renderers.layout import TreeLayout
 from ..renderers.timeline import TimelineRenderer
-from ..worklog import clamp_remaining_estimate
 from ..worklog import collect_day_worklog_entries
 from ..worklog import resolve_timezone
 
@@ -275,13 +274,11 @@ class JiraTree(Tree[JiraNodeData]):
             started: datetime,
             time_spent_seconds: int,
             comment_text: str,
-            remaining_estimate_seconds: int | None,
         ):
             self.issue_key = issue_key
             self.started = started
             self.time_spent_seconds = time_spent_seconds
             self.comment_text = comment_text
-            self.remaining_estimate_seconds = remaining_estimate_seconds
             super().__init__()
 
     def __init__(
@@ -1182,6 +1179,5 @@ class JiraTree(Tree[JiraNodeData]):
                 result.started,
                 result.time_spent_seconds,
                 result.comment_text,
-                clamp_remaining_estimate(issue.fields.time_estimate, result.time_spent_seconds),
             )
         )
