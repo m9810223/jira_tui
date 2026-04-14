@@ -287,7 +287,6 @@ class JiraDashboard(App):
             event.started,
             event.time_spent_seconds,
             event.comment_text,
-            event.remaining_estimate_seconds,
         )
 
     @work(thread=True)
@@ -297,7 +296,6 @@ class JiraDashboard(App):
         started: datetime,
         time_spent_seconds: int,
         comment_text: str,
-        remaining_estimate_seconds: int | None,
     ) -> None:
         try:
             client = self._get_jira_client()
@@ -306,7 +304,6 @@ class JiraDashboard(App):
                 started=started,
                 time_spent_seconds=time_spent_seconds,
                 comment_text=comment_text,
-                remaining_estimate_seconds=remaining_estimate_seconds,
             )
             self.call_from_thread(self._after_issue_worklog_added, issue_key)
         except Exception as e:

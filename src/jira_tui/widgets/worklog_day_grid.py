@@ -158,26 +158,12 @@ class WorklogDayGrid(Static):
                 return entry
         return None
 
-    def _format_entry_label(self, entry: WorklogEntry) -> str:
-        return f' {entry.issue_key} {entry.issue_summary}'
-
     def _entry_identifier(self, entry: WorklogEntry) -> str:
         return entry.worklog_id or f'{entry.issue_key}:{entry.started.isoformat()}'
 
     def _entry_style(self, entry: WorklogEntry) -> str:
         """Get the accent color for a worklog entry."""
         return self._entry_style_map.get(self._entry_identifier(entry), self._ENTRY_COLORS[0])
-
-    def _format_entry_line(self, entry: WorklogEntry, slot: int) -> str:
-        start_slot = self._slot_index_for_entry(entry)
-        slot_offset = slot - start_slot
-        duration_slots = seconds_to_slots_ceil(entry.time_spent_seconds)
-        if slot_offset == 0:
-            return self._format_entry_label(entry)
-        if slot_offset == 1 and duration_slots >= 4:
-            if entry.comment_text:
-                return f' {entry.comment_text}'
-        return ' '
 
     def _slot_from_y(self, y: int) -> int | None:
         content_y = y - self.gutter.top

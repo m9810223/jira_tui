@@ -143,9 +143,8 @@ class JiraClient:
         started: datetime,
         time_spent_seconds: int,
         comment_text: str,
-        remaining_estimate_seconds: int | None,
     ) -> JiraWorklog:
-        """新增 worklog，並視情況更新 remaining estimate。"""
+        """新增 worklog。"""
         payload: dict = {
             'started': started.strftime('%Y-%m-%dT%H:%M:%S.000%z'),
             'timeSpent': seconds_to_jira_duration(time_spent_seconds),

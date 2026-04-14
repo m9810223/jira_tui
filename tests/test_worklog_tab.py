@@ -92,6 +92,9 @@ class FakeJiraClient:
         self.added_worklogs: list[dict] = []
         self.updated_worklogs: list[dict] = []
         self.deleted_worklogs: list[dict] = []
+        self.fail_add_worklog = False
+        self.fail_update_worklog = False
+        self.fail_delete_worklog = False
 
     def get_myself(self) -> dict:
         return self.myself
@@ -114,15 +117,15 @@ class FakeJiraClient:
         started: datetime,
         time_spent_seconds: int,
         comment_text: str,
-        remaining_estimate_seconds: int | None,
     ) -> JiraWorklog:
+        if self.fail_add_worklog:
+            raise RuntimeError('boom-add')
         self.added_worklogs.append(
             {
                 'issue_key': issue_key,
                 'started': started,
                 'time_spent_seconds': time_spent_seconds,
                 'comment_text': comment_text,
-                'remaining_estimate_seconds': remaining_estimate_seconds,
             }
         )
         return JiraWorklog.model_validate(
@@ -143,6 +146,8 @@ class FakeJiraClient:
         time_spent_seconds: int,
         comment_text: str,
     ) -> JiraWorklog:
+        if self.fail_update_worklog:
+            raise RuntimeError('boom-update')
         self.updated_worklogs.append(
             {
                 'issue_key': issue_key,
@@ -163,6 +168,8 @@ class FakeJiraClient:
         )
 
     def delete_issue_worklog(self, issue_key: str, worklog_id: str) -> None:
+        if self.fail_delete_worklog:
+            raise RuntimeError('boom-delete')
         self.deleted_worklogs.append(
             {
                 'issue_key': issue_key,
@@ -475,7 +482,67 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual('PROJ-1', payload['issue_key'])
             self.assertEqual(3600, payload['time_spent_seconds'])
             self.assertEqual('Deep focus', payload['comment_text'])
-            self.assertEqual(0, payload['remaining_estimate_seconds'])
+
+    async def test_submit_worklog_failure_sets_error_status(self) -> None:
+        self.client.fail_add_worklog = True
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            tab.set_selected_day(date(2026, 4, 9))
+            tab.refresh_day()
+            await pilot.pause()
+
+            grid = tab.query_one(WorklogDayGrid)
+            grid.set_draft_slots(4, 6)
+            tab.issue_picker.select_issue('PROJ-1')
+            tab.submit_worklog()
+            await pilot.pause()
+
+            self.assertEqual([], self.client.added_worklogs)
+            status = tab.query_one('#worklog-status', Static)
+            self.assertIn('Failed to add worklog for PROJ-1', str(status.render()))
+
+    async def test_update_worklog_failure_sets_error_status(self) -> None:
+        self.client.fail_update_worklog = True
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            tab.set_selected_day(date(2026, 4, 9))
+            tab.refresh_day()
+            await pilot.pause()
+
+            entry = tab.query_one(WorklogDayGrid).worklog_entries[0]
+            result = WorklogEditorResult(
+                issue_key=entry.issue_key,
+                worklog_id=entry.worklog_id,
+                started=datetime(2026, 4, 9, 10, 0, tzinfo=ZoneInfo('Asia/Taipei')),
+                time_spent_seconds=1800,
+                comment_text='Edited comment',
+            )
+            tab._on_worklog_editor_complete(result)
+            await pilot.pause()
+
+            self.assertEqual([], self.client.updated_worklogs)
+            status = tab.query_one('#worklog-status', Static)
+            self.assertIn('Failed to update worklog for PROJ-1', str(status.render()))
+
+    async def test_delete_worklog_failure_sets_error_status(self) -> None:
+        self.client.fail_delete_worklog = True
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            tab = self.app.query_one(WorklogTab)
+            tab.set_selected_day(date(2026, 4, 9))
+            tab.refresh_day()
+            await pilot.pause()
+
+            tab._on_worklog_editor_complete(
+                WorklogDeleteResult(issue_key='PROJ-1', worklog_id='w1')
+            )
+            await pilot.pause()
+
+            self.assertEqual([], self.client.deleted_worklogs)
+            status = tab.query_one('#worklog-status', Static)
+            self.assertIn('Failed to delete worklog for PROJ-1', str(status.render()))
 
     async def test_click_existing_worklog_opens_editor_modal(self) -> None:
         async with self.app.run_test() as pilot:
