@@ -8,6 +8,7 @@ from jira_tui.app import JiraDashboard
 from jira_tui.models import JiraIssue
 from jira_tui.models import JiraWorklog
 from jira_tui.screens.worklog_editor import WorklogDeleteResult
+from jira_tui.screens.worklog_editor import WorklogEditorModal
 from jira_tui.screens.worklog_editor import WorklogEditorResult
 from jira_tui.tabs.worklog import WorklogDayData
 from jira_tui.tabs.worklog import WorklogTab
@@ -389,6 +390,19 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             comment_text='',
         )
         self.assertEqual(2, grid._slot_index_for_entry(entry))
+
+    def test_worklog_editor_time_axis_matches_worklog_view_format(self) -> None:
+        modal = WorklogEditorModal(
+            issue_key='PROJ-1',
+            issue_summary='Alpha task',
+            selected_day=date(2026, 4, 9),
+            timezone=ZoneInfo('Asia/Taipei'),
+            existing_entries=[],
+        )
+        labels = modal._build_axis_labels().splitlines()
+        self.assertEqual('08:00 ', labels[1])
+        self.assertEqual('  --  ', labels[2])
+        self.assertEqual('09:00 ', labels[3])
 
     async def test_worklog_day_navigation_actions_change_selected_day(self) -> None:
         async with self.app.run_test() as pilot:
