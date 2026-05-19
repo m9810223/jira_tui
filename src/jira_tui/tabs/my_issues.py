@@ -334,4 +334,6 @@ class MyIssuesTab(JiraClientMixin, Vertical):
         if self._switch_tab_on_load:
             self._switch_tab_on_load = False
             self.app.notify(f'已載入 {len(issues)} 個 Issues', timeout=3)
-            self.app.action_switch_to_issues()  # pyright: ignore[reportAttributeAccessIssue]
+            active_tab = self.app.query_one(TabbedContent).active
+            if active_tab in {'home-tab', 'my-issues-tab'}:
+                self.app.action_switch_to_issues()  # pyright: ignore[reportAttributeAccessIssue]
