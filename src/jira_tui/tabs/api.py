@@ -76,6 +76,7 @@ class ApiTab(JiraClientMixin, Vertical):
     def _start_loading_issues(self, myself: dict) -> None:
         """開始載入 issues 和 users"""
         from .my_issues import MyIssuesTab
+        from .worklog import WorklogTab
 
         display_name = myself.get('displayName', 'Current User')
         my_issues_tab = self.app.query_one(MyIssuesTab)
@@ -83,6 +84,7 @@ class ApiTab(JiraClientMixin, Vertical):
         my_issues_tab._selected_display = display_name
         my_issues_tab._update_assignee_display()
         my_issues_tab._load_users()
+        self.app.query_one(WorklogTab).refresh_day()
         # 載入完成後切換 tab
         my_issues_tab.run_search(switch_tab=True)
 

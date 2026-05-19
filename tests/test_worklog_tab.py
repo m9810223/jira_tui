@@ -10,6 +10,7 @@ from jira_tui.models import JiraWorklog
 from jira_tui.screens.worklog_editor import WorklogDeleteResult
 from jira_tui.screens.worklog_editor import WorklogEditorModal
 from jira_tui.screens.worklog_editor import WorklogEditorResult
+from jira_tui.tabs.api import ApiTab
 from jira_tui.tabs.worklog import WorklogDayData
 from jira_tui.tabs.worklog import WorklogTab
 from jira_tui.tabs.my_issues import MyIssuesTab
@@ -250,6 +251,37 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('alt+left', binding_keys)
         self.assertNotIn('alt+right', binding_keys)
         self.assertNotIn('alt+t', binding_keys)
+
+    async def test_pending_issue_load_does_not_pull_user_back_from_worklog_tab(self) -> None:
+        async with self.app.run_test() as pilot:
+            tabs = self.app.query_one(TabbedContent)
+            issues_tab = self.app.query_one(MyIssuesTab)
+            issues_tab._switch_tab_on_load = True
+            tabs.active = 'worklog-tab'
+
+            issues_tab._on_search_complete([], [])
+            await pilot.pause()
+
+            self.assertEqual('worklog-tab', tabs.active)
+
+    async def test_login_success_refreshes_worklog_day_data(self) -> None:
+        async with self.app.run_test() as pilot:
+            api_tab = self.app.query_one(ApiTab)
+            issues_tab = self.app.query_one(MyIssuesTab)
+            tab = self.app.query_one(WorklogTab)
+            refresh_calls = []
+
+            def capture_refresh_day() -> None:
+                refresh_calls.append('refresh')
+
+            issues_tab._load_users = lambda: None  # type: ignore[method-assign]
+            issues_tab.run_search = lambda *, switch_tab=False: None  # type: ignore[method-assign]
+            tab.refresh_day = capture_refresh_day  # type: ignore[method-assign]
+
+            api_tab._start_loading_issues(self.client.myself)
+            await pilot.pause()
+
+            self.assertEqual(['refresh'], refresh_calls)
 
     async def test_worklog_tab_defaults_to_today_and_loads_existing_blocks(self) -> None:
         async with self.app.run_test() as pilot:
