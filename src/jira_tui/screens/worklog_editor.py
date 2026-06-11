@@ -9,6 +9,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.containers import Vertical
+from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button
 from textual.widgets import Label
@@ -73,11 +74,13 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
                 yield Label(f'{title}: {self._issue_key}')
                 yield Static(self._selected_day.strftime('%Y-%m-%d'), id='worklog-editor-date')
             with Horizontal(id='worklog-editor-body'):
-                yield Static(self._build_axis_labels(), id='worklog-editor-axis')
-                yield WorklogDayGrid(
-                    id='worklog-editor-grid',
-                    allow_entry_selection=False,
-                )
+                with VerticalScroll(id='worklog-editor-scroll'):
+                    with Horizontal(id='worklog-editor-scroll-body'):
+                        yield Static(self._build_axis_labels(), id='worklog-editor-axis')
+                        yield WorklogDayGrid(
+                            id='worklog-editor-grid',
+                            allow_entry_selection=False,
+                        )
                 with Vertical(id='worklog-editor-side'):
                     yield Label(self._issue_summary)
                     yield Label('Comment')
@@ -107,7 +110,7 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
         labels = ['']
         for slot in range(SLOTS_PER_DAY):
             if slot % 2 == 0:
-                hour = DAY_START_HOUR + slot // 2
+                hour = (DAY_START_HOUR + slot // 2) % 24
                 labels.append(f'{hour:02d}:00 ')
             else:
                 labels.append('  --  ')

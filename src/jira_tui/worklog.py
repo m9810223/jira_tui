@@ -13,7 +13,8 @@ from .models import JiraWorklog
 
 
 DAY_START_HOUR = 8
-DAY_END_HOUR = 20
+DAY_END_HOUR = 26
+"""Exclusive grid end; values past 24 extend the logical day after midnight (26 = 02:00)."""
 SLOT_MINUTES = 30
 SLOT_SECONDS = SLOT_MINUTES * 60
 SLOTS_PER_DAY = (DAY_END_HOUR - DAY_START_HOUR) * 60 // SLOT_MINUTES
@@ -76,9 +77,15 @@ def selection_to_seconds(start_slot: int, end_slot: int) -> int:
     return max(0, end_slot - start_slot) * SLOT_SECONDS
 
 
+def started_to_slot(started: datetime) -> int:
+    """Map a start time to its grid slot, wrapping after-midnight hours past 24."""
+    hour = started.hour if started.hour >= DAY_START_HOUR else started.hour + 24
+    return (hour - DAY_START_HOUR) * 2 + started.minute // SLOT_MINUTES
+
+
 def datetime_to_slot_range(started: datetime, time_spent_seconds: int) -> tuple[int, int]:
     """Convert a worklog datetime range into grid slots."""
-    start_slot = int((started.hour - DAY_START_HOUR) * 2 + started.minute // SLOT_MINUTES)
+    start_slot = started_to_slot(started)
     duration_slots = seconds_to_slots_ceil(time_spent_seconds)
     return start_slot, start_slot + duration_slots
 
@@ -154,12 +161,13 @@ def filter_worklogs_for_day(
     account_id: str,
     timezone: ZoneInfo,
 ) -> list[WorklogEntry]:
-    """Keep only entries for the selected local date and user."""
+    """Keep only the user's entries whose logical day matches; after-midnight entries count as the previous day."""
+    overflow = timedelta(hours=max(0, DAY_END_HOUR - 24))
     return [
         entry
         for entry in entries
         if entry.author_account_id == account_id
-        and entry.started.astimezone(timezone).date() == selected_day
+        and (entry.started.astimezone(timezone) - overflow).date() == selected_day
     ]
 
 

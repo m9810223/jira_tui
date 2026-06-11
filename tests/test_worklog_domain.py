@@ -65,6 +65,14 @@ class WorklogDomainTests(unittest.TestCase):
         )
         self.assertEqual((2, 4), (start_slot, end_slot))
 
+    def test_datetime_to_slot_range_maps_after_midnight_to_late_night_slots(self) -> None:
+        tz = ZoneInfo('Asia/Taipei')
+        start_slot, end_slot = datetime_to_slot_range(
+            datetime(2026, 4, 10, 0, 30, tzinfo=tz),
+            30 * 60,
+        )
+        self.assertEqual((33, 34), (start_slot, end_slot))
+
     def test_seconds_to_slots_ceil_rounds_15_and_29_minutes_to_single_slot(self) -> None:
         self.assertEqual(1, seconds_to_slots_ceil(15 * 60))
         self.assertEqual(1, seconds_to_slots_ceil(29 * 60))
@@ -128,6 +136,36 @@ class WorklogDomainTests(unittest.TestCase):
         )
 
         self.assertEqual(['1'], [entry.worklog_id for entry in filtered])
+
+    def test_filter_worklogs_for_day_assigns_after_midnight_entry_to_previous_day(self) -> None:
+        tz = ZoneInfo('Asia/Taipei')
+        entries = [
+            WorklogEntry(
+                worklog_id='1',
+                issue_key='PROJ-1',
+                issue_summary='Late night task',
+                author_account_id='me',
+                started=datetime(2026, 4, 10, 0, 30, tzinfo=tz),
+                time_spent_seconds=1800,
+                comment_text='after midnight',
+            ),
+        ]
+
+        previous_day = filter_worklogs_for_day(
+            entries,
+            selected_day=date(2026, 4, 9),
+            account_id='me',
+            timezone=tz,
+        )
+        same_calendar_day = filter_worklogs_for_day(
+            entries,
+            selected_day=date(2026, 4, 10),
+            account_id='me',
+            timezone=tz,
+        )
+
+        self.assertEqual(['1'], [entry.worklog_id for entry in previous_day])
+        self.assertEqual([], same_calendar_day)
 
     def test_has_overlap_detects_existing_block_collision(self) -> None:
         tz = ZoneInfo('Asia/Taipei')

@@ -13,6 +13,7 @@ from ..worklog import SLOTS_PER_DAY
 from ..worklog import WorklogEntry
 from ..worklog import normalize_slot_range
 from ..worklog import seconds_to_slots_ceil
+from ..worklog import started_to_slot
 
 
 class WorklogDayGrid(Static):
@@ -75,7 +76,7 @@ class WorklogDayGrid(Static):
 
     def _render_time_axis_label(self, slot: int) -> Text:
         """Render a formatted time label for a given slot."""
-        hour = DAY_START_HOUR + (slot * SLOT_MINUTES) // 60
+        hour = (DAY_START_HOUR + (slot * SLOT_MINUTES) // 60) % 24
         if slot % 2 == 0:
             return Text(f"{hour:02d}:00 ", style="bold")
         return Text("  --  ", style="dim")
@@ -148,7 +149,7 @@ class WorklogDayGrid(Static):
         started = entry.started
         if self._display_timezone is not None:
             started = started.astimezone(self._display_timezone)
-        return int((started.hour - DAY_START_HOUR) * 2 + started.minute // SLOT_MINUTES)
+        return started_to_slot(started)
 
     def _entry_for_slot(self, slot: int) -> WorklogEntry | None:
         for entry in self.worklog_entries:

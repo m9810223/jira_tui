@@ -11,6 +11,7 @@ from textual import work
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.containers import Vertical
+from textual.containers import VerticalScroll
 from textual.widgets import Button
 from textual.widgets import LoadingIndicator
 from textual.widgets import Static
@@ -79,8 +80,10 @@ class WorklogTab(JiraClientMixin, Vertical):
             yield Static('', id='worklog-draft-summary')
         yield LoadingIndicator(id='worklog-loading', classes='hidden')
         with Horizontal(id='worklog-body'):
-            yield Static('', id='worklog-time-axis')
-            yield WorklogDayGrid(id='worklog-day-grid')
+            with VerticalScroll(id='worklog-scroll'):
+                with Horizontal(id='worklog-scroll-body'):
+                    yield Static('', id='worklog-time-axis')
+                    yield WorklogDayGrid(id='worklog-day-grid')
             yield WorklogIssuePicker(id='worklog-issue-picker')
         yield Static('', id='worklog-status')
 

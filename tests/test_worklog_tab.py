@@ -16,7 +16,9 @@ from jira_tui.tabs.worklog import WorklogTab
 from jira_tui.tabs.my_issues import MyIssuesTab
 from jira_tui.widgets.tree import JiraTree
 from jira_tui.widgets.worklog_day_grid import WorklogDayGrid
+from jira_tui.worklog import SLOTS_PER_DAY
 from jira_tui.worklog import WorklogEntry
+from textual.containers import VerticalScroll
 from textual.geometry import Region
 from textual.geometry import Size
 from textual.geometry import Spacing
@@ -409,6 +411,24 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(grid._slot_from_y(0))
         self.assertEqual(0, grid._slot_from_y(1))
 
+    def test_grid_places_after_midnight_entry_on_late_night_slots(self) -> None:
+        grid = WorklogDayGrid()
+        grid.set_display_timezone(ZoneInfo('Asia/Taipei'))
+        entry = WorklogEntry(
+            worklog_id='w1',
+            issue_key='PROJ-1',
+            issue_summary='Late night task',
+            author_account_id='me',
+            started=datetime(2026, 4, 10, 0, 0, tzinfo=ZoneInfo('Asia/Taipei')),
+            time_spent_seconds=3600,
+            comment_text='',
+        )
+        self.assertEqual(32, grid._slot_index_for_entry(entry))
+
+    def test_grid_time_axis_wraps_midnight_label_to_zero_hour(self) -> None:
+        grid = WorklogDayGrid()
+        self.assertEqual('00:00 ', grid._render_time_axis_label(32).plain)
+
     def test_grid_slot_uses_display_timezone_for_entry_placement(self) -> None:
         grid = WorklogDayGrid()
         grid.set_display_timezone(ZoneInfo('Asia/Taipei'))
@@ -435,6 +455,46 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('08:00 ', labels[1])
         self.assertEqual('  --  ', labels[2])
         self.assertEqual('09:00 ', labels[3])
+
+    def test_worklog_editor_time_axis_extends_to_after_midnight(self) -> None:
+        modal = WorklogEditorModal(
+            issue_key='PROJ-1',
+            issue_summary='Alpha task',
+            selected_day=date(2026, 4, 9),
+            timezone=ZoneInfo('Asia/Taipei'),
+            existing_entries=[],
+        )
+        labels = modal._build_axis_labels().splitlines()
+        self.assertEqual(37, len(labels))
+        self.assertEqual('00:00 ', labels[33])
+        self.assertEqual('01:00 ', labels[35])
+        self.assertEqual('  --  ', labels[36])
+
+    async def test_worklog_grid_keeps_full_height_and_scrolls_on_short_terminal(self) -> None:
+        async with self.app.run_test(size=(140, 20)) as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            await pilot.pause()
+
+            tab = self.app.query_one(WorklogTab)
+            scroll = tab.query_one('#worklog-scroll', VerticalScroll)
+            grid = tab.query_one(WorklogDayGrid)
+            self.assertGreaterEqual(grid.size.height, SLOTS_PER_DAY)
+            self.assertGreater(scroll.max_scroll_y, 0)
+
+    async def test_worklog_editor_grid_scrolls_on_short_terminal(self) -> None:
+        async with self.app.run_test(size=(140, 20)) as pilot:
+            modal = WorklogEditorModal(
+                issue_key='PROJ-1',
+                issue_summary='Alpha task',
+                selected_day=date(2026, 4, 9),
+                timezone=ZoneInfo('Asia/Taipei'),
+                existing_entries=[],
+            )
+            self.app.push_screen(modal)
+            await pilot.pause()
+
+            scroll = modal.query_one('#worklog-editor-scroll', VerticalScroll)
+            self.assertGreater(scroll.max_scroll_y, 0)
 
     async def test_worklog_day_navigation_actions_change_selected_day(self) -> None:
         async with self.app.run_test() as pilot:

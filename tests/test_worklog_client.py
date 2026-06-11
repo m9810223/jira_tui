@@ -1,3 +1,4 @@
+from datetime import date
 from datetime import datetime
 import unittest
 
@@ -84,6 +85,18 @@ class WorklogClientTests(unittest.TestCase):
             },
             kwargs['json'],
         )
+
+    def test_search_day_worklog_issues_jql_covers_after_midnight_window(self) -> None:
+        client = CapturingJiraClient()
+
+        client.search_day_worklog_issues_for_current_user(date(2026, 4, 9))
+
+        method, endpoint, kwargs = client.calls[-1]
+        self.assertEqual('GET', method)
+        self.assertEqual('/rest/api/3/search/jql', endpoint)
+        jql = kwargs['params']['jql']
+        self.assertIn("worklogDate >= '2026-04-09'", jql)
+        self.assertIn("worklogDate < '2026-04-11'", jql)
 
     def test_delete_issue_worklog_calls_api_2_endpoint(self) -> None:
         client = CapturingJiraClient()

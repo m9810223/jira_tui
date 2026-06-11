@@ -114,11 +114,12 @@ class JiraClient:
 
     def search_day_worklog_issues_for_current_user(self, selected_day: date) -> list:
         """取得指定日期有 worklog 的 issues。"""
-        next_day = selected_day + timedelta(days=1)
+        # 跨午夜的 worklog 在 Jira 屬隔日日期，窗口多涵蓋一天，再由本地 filter 篩選
+        window_end = selected_day + timedelta(days=2)
         jql = (
             'worklogAuthor in (currentUser()) '
             f"AND worklogDate >= '{selected_day:%Y-%m-%d}' "
-            f"AND worklogDate < '{next_day:%Y-%m-%d}'"
+            f"AND worklogDate < '{window_end:%Y-%m-%d}'"
         )
         return self.search_jql(
             jql,

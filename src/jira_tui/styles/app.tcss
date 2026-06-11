@@ -180,9 +180,19 @@ TabbedContent {
     padding: 0 1 1 1;
 }
 
+#worklog-scroll {
+    width: 1fr;
+    height: 1fr;
+    margin-right: 1;
+}
+
+#worklog-scroll-body {
+    height: auto;
+}
+
 #worklog-time-axis {
     width: 7;
-    height: 1fr;
+    height: auto;
     color: $text-muted;
 }
 
@@ -206,9 +216,8 @@ TabbedContent {
 
 #worklog-day-grid {
     width: 1fr;
-    height: 1fr;
+    height: auto;
     border: solid $primary;
-    margin-right: 1;
 }
 
 #worklog-issue-picker {
@@ -261,7 +270,8 @@ WorklogEditorModal {
 
 #worklog-editor-dialog {
     width: 120;
-    height: 34;
+    height: 46;
+    max-height: 100%;
     padding: 1 2;
     background: $surface;
     border: thick $primary;
@@ -284,15 +294,24 @@ WorklogEditorModal {
     height: 1fr;
 }
 
+#worklog-editor-scroll {
+    width: 1fr;
+    height: 1fr;
+}
+
+#worklog-editor-scroll-body {
+    height: auto;
+}
+
 #worklog-editor-axis {
     width: 8;
-    height: 24;
+    height: auto;
     color: $text-muted;
 }
 
 #worklog-editor-grid {
     width: 1fr;
-    height: 24;
+    height: auto;
     border: round $primary-background;
 }
 
