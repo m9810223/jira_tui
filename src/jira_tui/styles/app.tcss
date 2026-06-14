@@ -171,6 +171,12 @@ TabbedContent {
     color: $text-muted;
 }
 
+#worklog-zoom-label {
+    width: 10;
+    content-align: right middle;
+    color: $text-muted;
+}
+
 #worklog-loading {
     height: auto;
 }

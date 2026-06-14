@@ -3,6 +3,7 @@
 import typing as t
 from collections.abc import Callable
 from dataclasses import dataclass
+from dataclasses import replace
 from datetime import date
 from datetime import datetime
 from datetime import time
@@ -29,6 +30,7 @@ class _GridConfig(BaseSettings):
 
     worklog_day_start_hour: int = 6
     worklog_day_end_hour: int = 28
+    worklog_slot_minutes: int = 60
 
     @model_validator(mode='after')
     def _check_grid_bounds(self) -> t.Self:
@@ -37,24 +39,87 @@ class _GridConfig(BaseSettings):
         # 跨午夜的格子靠把小時 +24 換算，終點最遠只能到隔日 24:00 (=48)
         if not self.worklog_day_start_hour < self.worklog_day_end_hour <= 48:
             raise ValueError('worklog_day_end_hour must be in (worklog_day_start_hour, 48]')
+        if self.worklog_slot_minutes not in ZOOM_SLOT_MINUTES:
+            raise ValueError(f'worklog_slot_minutes must be one of {ZOOM_SLOT_MINUTES}')
         return self
 
+
+ZOOM_SLOT_MINUTES: t.Final[tuple[int, ...]] = (30, 60, 120)
+"""Selectable grid granularities, finest first (30m / 1h / 2h)."""
 
 _grid_config = _GridConfig()
 
 DAY_START_HOUR = _grid_config.worklog_day_start_hour
 DAY_END_HOUR = _grid_config.worklog_day_end_hour
 """Exclusive grid end; values past 24 extend the logical day after midnight (max 48 = next-day 24:00)."""
-SLOT_MINUTES = 30
-SLOT_SECONDS = SLOT_MINUTES * 60
-SLOTS_PER_DAY = (DAY_END_HOUR - DAY_START_HOUR) * 60 // SLOT_MINUTES
+DEFAULT_SLOT_MINUTES = _grid_config.worklog_slot_minutes
 
 
-def seconds_to_slots_ceil(seconds: int) -> int:
-    """Convert seconds into 30-minute slots with ceil behavior."""
-    if seconds <= 0:
-        return 1
-    return (seconds + SLOT_SECONDS - 1) // SLOT_SECONDS
+@dataclass(frozen=True, slots=True)
+class GridScale:
+    """Time-grid geometry: a fixed day window with a zoomable slot size."""
+
+    slot_minutes: int = DEFAULT_SLOT_MINUTES
+    day_start_hour: int = DAY_START_HOUR
+    day_end_hour: int = DAY_END_HOUR
+
+    @property
+    def slot_seconds(self) -> int:
+        return self.slot_minutes * 60
+
+    @property
+    def slots_per_day(self) -> int:
+        return (self.day_end_hour - self.day_start_hour) * 60 // self.slot_minutes
+
+    def seconds_to_slots_ceil(self, seconds: int) -> int:
+        """Convert seconds into grid slots with ceil behavior."""
+        if seconds <= 0:
+            return 1
+        return (seconds + self.slot_seconds - 1) // self.slot_seconds
+
+    def started_to_slot(self, started: datetime) -> int:
+        """Map a start time to its grid slot, wrapping after-midnight hours past 24."""
+        hour = started.hour if started.hour >= self.day_start_hour else started.hour + 24
+        minutes_from_start = (hour - self.day_start_hour) * 60 + started.minute
+        return minutes_from_start // self.slot_minutes
+
+    def datetime_to_slot_range(self, started: datetime, time_spent_seconds: int) -> tuple[int, int]:
+        """Convert a worklog datetime range into grid slots."""
+        start_slot = self.started_to_slot(started)
+        return start_slot, start_slot + self.seconds_to_slots_ceil(time_spent_seconds)
+
+    def selection_to_datetimes(
+        self,
+        selected_day: date,
+        start_slot: int,
+        end_slot: int,
+        timezone: ZoneInfo,
+    ) -> tuple[datetime, datetime]:
+        """Convert slot offsets into timezone-aware datetimes."""
+        day_start = datetime.combine(selected_day, time(hour=self.day_start_hour), tzinfo=timezone)
+        return (
+            day_start + timedelta(minutes=start_slot * self.slot_minutes),
+            day_start + timedelta(minutes=end_slot * self.slot_minutes),
+        )
+
+    def selection_to_seconds(self, start_slot: int, end_slot: int) -> int:
+        """Convert a slot range to seconds."""
+        return max(0, end_slot - start_slot) * self.slot_seconds
+
+    def is_hour_boundary(self, slot: int) -> bool:
+        """Whether a slot starts exactly on a whole hour (so it gets a label)."""
+        return (slot * self.slot_minutes) % 60 == 0
+
+    def hour_at(self, slot: int) -> int:
+        """The wall-clock hour (0..23) at the start of a slot."""
+        return (self.day_start_hour + (slot * self.slot_minutes) // 60) % 24
+
+    def zoomed(self, step: int) -> 'GridScale':
+        """Return a scale one zoom step away (step<0 = finer, step>0 = coarser)."""
+        levels = ZOOM_SLOT_MINUTES
+        index = levels.index(self.slot_minutes) if self.slot_minutes in levels else levels.index(DEFAULT_SLOT_MINUTES)
+        index = max(0, min(len(levels) - 1, index + step))
+        return replace(self, slot_minutes=levels[index])
 
 
 def resolve_timezone(timezone_name: str | None, fallback: str = 'Asia/Taipei') -> ZoneInfo:
@@ -87,37 +152,6 @@ def normalize_slot_range(anchor_slot: int, current_slot: int) -> tuple[int, int]
     start_slot = min(anchor_slot, current_slot)
     end_slot = max(anchor_slot, current_slot) + 1
     return start_slot, end_slot
-
-
-def selection_to_datetimes(
-    selected_day: date,
-    start_slot: int,
-    end_slot: int,
-    timezone: ZoneInfo,
-) -> tuple[datetime, datetime]:
-    """Convert slot offsets into timezone-aware datetimes."""
-    day_start = datetime.combine(selected_day, time(hour=DAY_START_HOUR), tzinfo=timezone)
-    start_at = day_start + timedelta(minutes=start_slot * SLOT_MINUTES)
-    end_at = day_start + timedelta(minutes=end_slot * SLOT_MINUTES)
-    return start_at, end_at
-
-
-def selection_to_seconds(start_slot: int, end_slot: int) -> int:
-    """Convert a slot range to seconds."""
-    return max(0, end_slot - start_slot) * SLOT_SECONDS
-
-
-def started_to_slot(started: datetime) -> int:
-    """Map a start time to its grid slot, wrapping after-midnight hours past 24."""
-    hour = started.hour if started.hour >= DAY_START_HOUR else started.hour + 24
-    return (hour - DAY_START_HOUR) * 2 + started.minute // SLOT_MINUTES
-
-
-def datetime_to_slot_range(started: datetime, time_spent_seconds: int) -> tuple[int, int]:
-    """Convert a worklog datetime range into grid slots."""
-    start_slot = started_to_slot(started)
-    duration_slots = seconds_to_slots_ceil(time_spent_seconds)
-    return start_slot, start_slot + duration_slots
 
 
 def clamp_remaining_estimate(

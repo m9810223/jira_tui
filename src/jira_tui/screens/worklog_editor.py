@@ -15,14 +15,10 @@ from textual.widgets import Button
 from textual.widgets import Label
 from textual.widgets import Static
 
-from ..worklog import DAY_START_HOUR
-from ..worklog import SLOTS_PER_DAY
+from ..worklog import GridScale
 from ..worklog import WorklogEntry
-from ..worklog import datetime_to_slot_range
 from ..worklog import format_duration_label
 from ..worklog import has_overlap
-from ..worklog import selection_to_datetimes
-from ..worklog import selection_to_seconds
 from ..widgets.inputs import BlurTextArea
 from ..widgets.worklog_day_grid import WorklogDayGrid
 
@@ -58,6 +54,7 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
         timezone: ZoneInfo,
         existing_entries: list[WorklogEntry],
         current_entry: WorklogEntry | None = None,
+        scale: GridScale | None = None,
     ) -> None:
         super().__init__()
         self._issue_key = issue_key
@@ -66,6 +63,7 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
         self._timezone = timezone
         self._existing_entries = existing_entries
         self._current_entry = current_entry
+        self._scale = scale if scale is not None else GridScale()
 
     def compose(self) -> ComposeResult:
         title = 'Edit Worklog' if self._current_entry else 'Add Worklog'
@@ -94,10 +92,11 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
 
     def on_mount(self) -> None:
         grid = self.query_one('#worklog-editor-grid', WorklogDayGrid)
+        grid.set_scale(self._scale)
         grid.set_display_timezone(self._timezone)
         grid.set_worklog_entries(self._existing_entries)
         if self._current_entry is not None:
-            start_slot, end_slot = datetime_to_slot_range(
+            start_slot, end_slot = self._scale.datetime_to_slot_range(
                 self._current_entry.started.astimezone(self._timezone),
                 self._current_entry.time_spent_seconds,
             )
@@ -108,10 +107,9 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
 
     def _build_axis_labels(self) -> str:
         labels = ['']
-        for slot in range(SLOTS_PER_DAY):
-            if slot % 2 == 0:
-                hour = (DAY_START_HOUR + slot // 2) % 24
-                labels.append(f'{hour:02d}:00 ')
+        for slot in range(self._scale.slots_per_day):
+            if self._scale.is_hour_boundary(slot):
+                labels.append(f'{self._scale.hour_at(slot):02d}:00 ')
             else:
                 labels.append('  --  ')
         return '\n'.join(labels)
@@ -123,13 +121,13 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
             summary.update('No time range selected')
             return
         start_slot, end_slot = grid.draft_slots
-        started, ended = selection_to_datetimes(
+        started, ended = self._scale.selection_to_datetimes(
             self._selected_day,
             start_slot,
             end_slot,
             self._timezone,
         )
-        duration = format_duration_label(selection_to_seconds(start_slot, end_slot))
+        duration = format_duration_label(self._scale.selection_to_seconds(start_slot, end_slot))
         summary.update(f'{started:%H:%M}-{ended:%H:%M} ({duration})')
 
     @on(WorklogDayGrid.SelectionChanged)
@@ -155,7 +153,7 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
             self.app.notify('Please drag a time range first.', severity='error')
             return
         start_slot, end_slot = grid.draft_slots
-        started, ended = selection_to_datetimes(
+        started, ended = self._scale.selection_to_datetimes(
             self._selected_day,
             start_slot,
             end_slot,
@@ -174,7 +172,7 @@ class WorklogEditorModal(ModalScreen[WorklogEditorResult | WorklogDeleteResult |
                 issue_key=self._issue_key,
                 worklog_id=self._current_entry.worklog_id if self._current_entry else None,
                 started=started,
-                time_spent_seconds=selection_to_seconds(start_slot, end_slot),
+                time_spent_seconds=self._scale.selection_to_seconds(start_slot, end_slot),
                 comment_text=self.query_one('#worklog-editor-comment', BlurTextArea).text.strip(),
             )
         )

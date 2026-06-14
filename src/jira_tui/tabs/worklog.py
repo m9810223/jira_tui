@@ -9,6 +9,7 @@ from rich.text import Text
 from textual import on
 from textual import work
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.containers import Vertical
 from textual.containers import VerticalScroll
@@ -21,14 +22,12 @@ from ..models import JiraIssue
 from ..screens.worklog_editor import WorklogDeleteResult
 from ..screens.worklog_editor import WorklogEditorModal
 from ..screens.worklog_editor import WorklogEditorResult
-from ..worklog import SLOTS_PER_DAY
+from ..worklog import GridScale
 from ..worklog import WorklogEntry
 from ..worklog import collect_day_worklog_entries
 from ..worklog import format_duration_label
 from ..worklog import has_overlap
 from ..worklog import resolve_timezone
-from ..worklog import selection_to_datetimes
-from ..worklog import selection_to_seconds
 from ..widgets.worklog_day_grid import WorklogDayGrid
 from ..widgets.worklog_issue_picker import WorklogIssuePicker
 from ._mixin import JiraClientMixin
@@ -53,6 +52,11 @@ class WorklogTabState:
 class WorklogTab(JiraClientMixin, Vertical):
     """Calendar-like worklog entry tab."""
 
+    BINDINGS = [
+        Binding('plus', 'zoom_in', 'Zoom in'),
+        Binding('minus', 'zoom_out', 'Zoom out'),
+    ]
+
     def __init__(self) -> None:
         super().__init__()
         self._state = WorklogTabState(
@@ -61,6 +65,7 @@ class WorklogTab(JiraClientMixin, Vertical):
             candidate_issues=[],
             worklog_entries=[],
         )
+        self._scale = GridScale()
         self._day_load_request_id = 0
 
     @property
@@ -78,6 +83,7 @@ class WorklogTab(JiraClientMixin, Vertical):
             yield Button('Next', id='worklog-next-day-btn')
             yield Static('', id='worklog-date-label')
             yield Static('', id='worklog-draft-summary')
+            yield Static('', id='worklog-zoom-label')
         yield LoadingIndicator(id='worklog-loading', classes='hidden')
         with Horizontal(id='worklog-body'):
             with VerticalScroll(id='worklog-scroll'):
@@ -94,9 +100,11 @@ class WorklogTab(JiraClientMixin, Vertical):
             candidate_issues=self._state.candidate_issues,
             worklog_entries=self._state.worklog_entries,
         )
+        self.query_one(WorklogDayGrid).set_scale(self._scale)
         self._update_time_axis()
         self._update_selected_day_label()
         self._update_draft_summary()
+        self._update_zoom_label()
         self.refresh_day()
 
     def _today(self) -> date:
@@ -223,7 +231,7 @@ class WorklogTab(JiraClientMixin, Vertical):
             return
 
         start_slot, end_slot = grid.draft_slots
-        started, ended = selection_to_datetimes(
+        started, ended = self._scale.selection_to_datetimes(
             self.selected_day,
             start_slot,
             end_slot,
@@ -237,7 +245,7 @@ class WorklogTab(JiraClientMixin, Vertical):
         if not client:
             return
 
-        selected_seconds = selection_to_seconds(start_slot, end_slot)
+        selected_seconds = self._scale.selection_to_seconds(start_slot, end_slot)
         self._submit_worklog(
             client,
             issue,
@@ -259,6 +267,7 @@ class WorklogTab(JiraClientMixin, Vertical):
                 timezone=self._state.timezone,
                 existing_entries=self._state.worklog_entries,
                 current_entry=entry,
+                scale=self._scale,
             ),
             self._on_worklog_editor_complete,
         )
@@ -389,6 +398,28 @@ class WorklogTab(JiraClientMixin, Vertical):
     def _handle_background_error(self, message: str) -> None:
         self._set_status(message, severity='error')
 
+    def action_zoom_in(self) -> None:
+        self._apply_zoom(self._scale.zoomed(-1))
+
+    def action_zoom_out(self) -> None:
+        self._apply_zoom(self._scale.zoomed(1))
+
+    def _apply_zoom(self, scale: GridScale) -> None:
+        if scale.slot_minutes == self._scale.slot_minutes:
+            return
+        self._scale = scale
+        grid = self.query_one(WorklogDayGrid)
+        grid.clear_draft()
+        grid.set_scale(scale)
+        self._update_time_axis()
+        self._update_zoom_label()
+        self._update_draft_summary()
+
+    def _update_zoom_label(self) -> None:
+        minutes = self._scale.slot_minutes
+        text = f'{minutes // 60}h' if minutes % 60 == 0 else f'{minutes}m'
+        self.query_one('#worklog-zoom-label', Static).update(f'Zoom: {text}')
+
     def _update_time_axis(self) -> None:
         grid = self.query_one(WorklogDayGrid)
         axis = self.query_one('#worklog-time-axis', Static)
@@ -396,7 +427,7 @@ class WorklogTab(JiraClientMixin, Vertical):
         result = Text()
         # 增加一個空白行以與 Toolbar 對齊
         result.append('\n')
-        for slot in range(SLOTS_PER_DAY):
+        for slot in range(self._scale.slots_per_day):
             if slot > 0:
                 result.append('\n')
             result.append_text(grid._render_time_axis_label(slot))
@@ -414,13 +445,13 @@ class WorklogTab(JiraClientMixin, Vertical):
             label.update('No draft selected')
             return
         start_slot, end_slot = grid.draft_slots
-        started, ended = selection_to_datetimes(
+        started, ended = self._scale.selection_to_datetimes(
             self.selected_day,
             start_slot,
             end_slot,
             self._state.timezone,
         )
-        duration = format_duration_label(selection_to_seconds(start_slot, end_slot))
+        duration = format_duration_label(self._scale.selection_to_seconds(start_slot, end_slot))
         label.update(f'{started:%H:%M}-{ended:%H:%M} ({duration})')
 
     @on(Button.Pressed)
