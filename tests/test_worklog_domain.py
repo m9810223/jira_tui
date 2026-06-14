@@ -4,17 +4,15 @@ from zoneinfo import ZoneInfo
 import unittest
 
 from jira_tui.models import JiraIssue
+from jira_tui.worklog import DEFAULT_SLOT_MINUTES
+from jira_tui.worklog import GridScale
 from jira_tui.worklog import WorklogEntry
 from jira_tui.worklog import clamp_remaining_estimate
-from jira_tui.worklog import datetime_to_slot_range
 from jira_tui.worklog import extract_comment_text
 from jira_tui.worklog import filter_candidate_issues
 from jira_tui.worklog import filter_worklogs_for_day
 from jira_tui.worklog import has_overlap
 from jira_tui.worklog import normalize_slot_range
-from jira_tui.worklog import seconds_to_slots_ceil
-from jira_tui.worklog import selection_to_datetimes
-from jira_tui.worklog import selection_to_seconds
 
 
 def make_issue(
@@ -41,25 +39,39 @@ class WorklogDomainTests(unittest.TestCase):
     def test_normalize_slot_range_orders_slots_and_keeps_end_exclusive(self) -> None:
         self.assertEqual((3, 7), normalize_slot_range(6, 3))
 
-    def test_selection_to_datetimes_snaps_to_half_hour_slots(self) -> None:
-        tz = ZoneInfo('Asia/Taipei')
+    def test_default_scale_uses_one_hour_slots(self) -> None:
+        self.assertEqual(60, DEFAULT_SLOT_MINUTES)
+        self.assertEqual(60, GridScale().slot_minutes)
 
-        start_at, end_at = selection_to_datetimes(
-            date(2026, 4, 9),
-            2,
-            5,
-            tz,
-        )
+    def test_slots_per_day_scales_with_granularity(self) -> None:
+        # 06:00-04:00 logical day = 22h
+        self.assertEqual(44, GridScale(slot_minutes=30).slots_per_day)
+        self.assertEqual(22, GridScale(slot_minutes=60).slots_per_day)
+        self.assertEqual(11, GridScale(slot_minutes=120).slots_per_day)
+
+    def test_started_to_slot_depends_on_granularity(self) -> None:
+        tz = ZoneInfo('Asia/Taipei')
+        nine_am = datetime(2026, 4, 9, 9, 0, tzinfo=tz)
+        self.assertEqual(6, GridScale(slot_minutes=30).started_to_slot(nine_am))
+        self.assertEqual(3, GridScale(slot_minutes=60).started_to_slot(nine_am))
+        self.assertEqual(1, GridScale(slot_minutes=120).started_to_slot(nine_am))
+
+    def test_selection_to_datetimes_snaps_to_slot_size(self) -> None:
+        tz = ZoneInfo('Asia/Taipei')
+        scale = GridScale(slot_minutes=30)
+
+        start_at, end_at = scale.selection_to_datetimes(date(2026, 4, 9), 2, 5, tz)
 
         self.assertEqual(datetime(2026, 4, 9, 7, 0, tzinfo=tz), start_at)
         self.assertEqual(datetime(2026, 4, 9, 8, 30, tzinfo=tz), end_at)
 
-    def test_selection_to_seconds_returns_thirty_minute_units(self) -> None:
-        self.assertEqual(90 * 60, selection_to_seconds(1, 4))
+    def test_selection_to_seconds_returns_slot_sized_units(self) -> None:
+        self.assertEqual(90 * 60, GridScale(slot_minutes=30).selection_to_seconds(1, 4))
+        self.assertEqual(180 * 60, GridScale(slot_minutes=60).selection_to_seconds(1, 4))
 
-    def test_datetime_to_slot_range_rounds_non_half_hour_duration_up(self) -> None:
+    def test_datetime_to_slot_range_rounds_non_slot_duration_up(self) -> None:
         tz = ZoneInfo('Asia/Taipei')
-        start_slot, end_slot = datetime_to_slot_range(
+        start_slot, end_slot = GridScale(slot_minutes=30).datetime_to_slot_range(
             datetime(2026, 4, 9, 9, 0, tzinfo=tz),
             45 * 60,
         )
@@ -67,15 +79,30 @@ class WorklogDomainTests(unittest.TestCase):
 
     def test_datetime_to_slot_range_maps_after_midnight_to_late_night_slots(self) -> None:
         tz = ZoneInfo('Asia/Taipei')
-        start_slot, end_slot = datetime_to_slot_range(
+        start_slot, end_slot = GridScale(slot_minutes=30).datetime_to_slot_range(
             datetime(2026, 4, 10, 0, 30, tzinfo=tz),
             30 * 60,
         )
         self.assertEqual((37, 38), (start_slot, end_slot))
 
-    def test_seconds_to_slots_ceil_rounds_15_and_29_minutes_to_single_slot(self) -> None:
-        self.assertEqual(1, seconds_to_slots_ceil(15 * 60))
-        self.assertEqual(1, seconds_to_slots_ceil(29 * 60))
+    def test_seconds_to_slots_ceil_rounds_sub_slot_durations_to_single_slot(self) -> None:
+        scale = GridScale(slot_minutes=30)
+        self.assertEqual(1, scale.seconds_to_slots_ceil(15 * 60))
+        self.assertEqual(1, scale.seconds_to_slots_ceil(29 * 60))
+
+    def test_is_hour_boundary_marks_only_whole_hours(self) -> None:
+        half = GridScale(slot_minutes=30)
+        self.assertTrue(half.is_hour_boundary(0))
+        self.assertFalse(half.is_hour_boundary(1))
+        # 1h / 2h slots always start on the hour
+        self.assertTrue(all(GridScale(slot_minutes=60).is_hour_boundary(s) for s in range(5)))
+        self.assertTrue(all(GridScale(slot_minutes=120).is_hour_boundary(s) for s in range(5)))
+
+    def test_zoomed_steps_through_levels_and_clamps(self) -> None:
+        self.assertEqual(30, GridScale(slot_minutes=60).zoomed(-1).slot_minutes)
+        self.assertEqual(120, GridScale(slot_minutes=60).zoomed(1).slot_minutes)
+        self.assertEqual(30, GridScale(slot_minutes=30).zoomed(-1).slot_minutes)
+        self.assertEqual(120, GridScale(slot_minutes=120).zoomed(1).slot_minutes)
 
     def test_clamp_remaining_estimate_stops_at_zero(self) -> None:
         self.assertEqual(0, clamp_remaining_estimate(1800, 3600))

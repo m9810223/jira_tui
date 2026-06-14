@@ -16,7 +16,7 @@ from jira_tui.tabs.worklog import WorklogTab
 from jira_tui.tabs.my_issues import MyIssuesTab
 from jira_tui.widgets.tree import JiraTree
 from jira_tui.widgets.worklog_day_grid import WorklogDayGrid
-from jira_tui.worklog import SLOTS_PER_DAY
+from jira_tui.worklog import GridScale
 from jira_tui.worklog import WorklogEntry
 from textual.containers import VerticalScroll
 from textual.geometry import Region
@@ -315,7 +315,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
 
             grid = tab.query_one(WorklogDayGrid)
-            rendered = grid._render_slot_line(6, 80).plain
+            rendered = grid._render_slot_line(3, 80).plain
             self.assertIn('PROJ-1', rendered)
             self.assertIn('Alpha task', rendered)
 
@@ -331,6 +331,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             comment_text='Focused implementation',
         )
         grid = WorklogDayGrid()
+        grid.set_scale(GridScale(slot_minutes=30))
         grid.set_worklog_entries([entry])
         rendered = grid._render_slot_line(7, 80).plain.strip()
         self.assertEqual('▌ Focused implementation', rendered)
@@ -347,6 +348,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             comment_text='Focused implementation',
         )
         grid = WorklogDayGrid()
+        grid.set_scale(GridScale(slot_minutes=30))
         grid.set_worklog_entries([entry])
         rendered = grid._render_slot_line(7, 80).plain
         self.assertIn('Focused implementation', rendered)
@@ -363,6 +365,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             comment_text='comment',
         )
         grid = WorklogDayGrid()
+        grid.set_scale(GridScale(slot_minutes=30))
         grid.set_worklog_entries([entry])
         rendered = grid._render_slot_line(10, 24)
         self.assertLessEqual(rendered.cell_len, 24)
@@ -413,6 +416,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
 
     def test_grid_places_after_midnight_entry_on_late_night_slots(self) -> None:
         grid = WorklogDayGrid()
+        grid.set_scale(GridScale(slot_minutes=30))
         grid.set_display_timezone(ZoneInfo('Asia/Taipei'))
         entry = WorklogEntry(
             worklog_id='w1',
@@ -427,10 +431,12 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
 
     def test_grid_time_axis_wraps_midnight_label_to_zero_hour(self) -> None:
         grid = WorklogDayGrid()
+        grid.set_scale(GridScale(slot_minutes=30))
         self.assertEqual('00:00 ', grid._render_time_axis_label(36).plain)
 
     def test_grid_slot_uses_display_timezone_for_entry_placement(self) -> None:
         grid = WorklogDayGrid()
+        grid.set_scale(GridScale(slot_minutes=30))
         grid.set_display_timezone(ZoneInfo('Asia/Taipei'))
         entry = WorklogEntry(
             worklog_id='w1',
@@ -450,6 +456,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             selected_day=date(2026, 4, 9),
             timezone=ZoneInfo('Asia/Taipei'),
             existing_entries=[],
+            scale=GridScale(slot_minutes=30),
         )
         labels = modal._build_axis_labels().splitlines()
         self.assertEqual('06:00 ', labels[1])
@@ -463,6 +470,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             selected_day=date(2026, 4, 9),
             timezone=ZoneInfo('Asia/Taipei'),
             existing_entries=[],
+            scale=GridScale(slot_minutes=30),
         )
         labels = modal._build_axis_labels().splitlines()
         self.assertEqual(45, len(labels))
@@ -478,7 +486,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             tab = self.app.query_one(WorklogTab)
             scroll = tab.query_one('#worklog-scroll', VerticalScroll)
             grid = tab.query_one(WorklogDayGrid)
-            self.assertGreaterEqual(grid.size.height, SLOTS_PER_DAY)
+            self.assertGreaterEqual(grid.size.height, GridScale().slots_per_day)
             self.assertGreater(scroll.max_scroll_y, 0)
 
     async def test_worklog_editor_grid_scrolls_on_short_terminal(self) -> None:
@@ -495,6 +503,51 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
 
             scroll = modal.query_one('#worklog-editor-scroll', VerticalScroll)
             self.assertGreater(scroll.max_scroll_y, 0)
+
+    async def test_zoom_defaults_to_one_hour_and_labels_it(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            await pilot.pause()
+            tab = self.app.query_one(WorklogTab)
+            self.assertEqual(60, tab.query_one(WorklogDayGrid).scale.slot_minutes)
+            self.assertEqual('Zoom: 1h', str(tab.query_one('#worklog-zoom-label', Static).render()))
+
+    async def test_zoom_in_and_out_change_grid_scale_and_clamp(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            await pilot.pause()
+            tab = self.app.query_one(WorklogTab)
+            grid = tab.query_one(WorklogDayGrid)
+
+            tab.action_zoom_in()
+            await pilot.pause()
+            self.assertEqual(30, grid.scale.slot_minutes)
+            self.assertEqual('Zoom: 30m', str(tab.query_one('#worklog-zoom-label', Static).render()))
+
+            # already finest → clamp
+            tab.action_zoom_in()
+            await pilot.pause()
+            self.assertEqual(30, grid.scale.slot_minutes)
+
+            tab.action_zoom_out()
+            tab.action_zoom_out()
+            await pilot.pause()
+            self.assertEqual(120, grid.scale.slot_minutes)
+            self.assertEqual('Zoom: 2h', str(tab.query_one('#worklog-zoom-label', Static).render()))
+
+    async def test_zoom_clears_existing_draft(self) -> None:
+        async with self.app.run_test() as pilot:
+            self.app.query_one(TabbedContent).active = 'worklog-tab'
+            await pilot.pause()
+            tab = self.app.query_one(WorklogTab)
+            grid = tab.query_one(WorklogDayGrid)
+            grid.set_draft_slots(3, 5)
+            await pilot.pause()
+            self.assertIsNotNone(grid.draft_slots)
+
+            tab.action_zoom_out()
+            await pilot.pause()
+            self.assertIsNone(grid.draft_slots)
 
     async def test_worklog_day_navigation_actions_change_selected_day(self) -> None:
         async with self.app.run_test() as pilot:
@@ -586,7 +639,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
 
             grid = tab.query_one(WorklogDayGrid)
-            grid.set_draft_slots(4, 6)
+            grid.set_draft_slots(4, 5)
             tab.issue_picker.select_issue('PROJ-1')
             tab.issue_picker.set_message('Deep focus')
             tab.submit_worklog()
@@ -667,7 +720,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             tab.refresh_day()
             await pilot.pause()
 
-            await pilot.click('#worklog-day-grid', offset=(2, 7))
+            await pilot.click('#worklog-day-grid', offset=(2, 4))
             await pilot.pause()
 
             self.assertEqual('WorklogEditorModal', self.app.screen_stack[-1].__class__.__name__)

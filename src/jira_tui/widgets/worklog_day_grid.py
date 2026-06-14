@@ -7,13 +7,9 @@ from textual import events
 from textual.message import Message
 from textual.widgets import Static
 
-from ..worklog import DAY_START_HOUR
-from ..worklog import SLOT_MINUTES
-from ..worklog import SLOTS_PER_DAY
+from ..worklog import GridScale
 from ..worklog import WorklogEntry
 from ..worklog import normalize_slot_range
-from ..worklog import seconds_to_slots_ceil
-from ..worklog import started_to_slot
 
 
 class WorklogDayGrid(Static):
@@ -49,7 +45,16 @@ class WorklogDayGrid(Static):
         self._entry_bg_map: dict[str, str] = {}
         self._allow_entry_selection = allow_entry_selection
         self._display_timezone: ZoneInfo | None = None
+        self._scale = GridScale()
         self.can_focus = True
+
+    def set_scale(self, scale: GridScale) -> None:
+        self._scale = scale
+        self.refresh(layout=True)
+
+    @property
+    def scale(self) -> GridScale:
+        return self._scale
 
     def set_display_timezone(self, timezone: ZoneInfo | None) -> None:
         self._display_timezone = timezone
@@ -76,9 +81,8 @@ class WorklogDayGrid(Static):
 
     def _render_time_axis_label(self, slot: int) -> Text:
         """Render a formatted time label for a given slot."""
-        hour = (DAY_START_HOUR + (slot * SLOT_MINUTES) // 60) % 24
-        if slot % 2 == 0:
-            return Text(f"{hour:02d}:00 ", style="bold")
+        if self._scale.is_hour_boundary(slot):
+            return Text(f"{self._scale.hour_at(slot):02d}:00 ", style="bold")
         return Text("  --  ", style="dim")
 
     def clear_draft(self) -> None:
@@ -94,7 +98,7 @@ class WorklogDayGrid(Static):
     def render(self) -> Text:
         width = self._render_width()
         lines: list[Text] = []
-        for slot in range(SLOTS_PER_DAY):
+        for slot in range(self._scale.slots_per_day):
             lines.append(self._render_slot_line(slot, width))
 
         result = Text()
@@ -128,13 +132,12 @@ class WorklogDayGrid(Static):
             # 內容區域
             content = Text()
             start_slot = self._slot_index_for_entry(entry)
-            duration_slots = seconds_to_slots_ceil(entry.time_spent_seconds)
+            duration_slots = self._scale.seconds_to_slots_ceil(entry.time_spent_seconds)
             slot_offset = slot - start_slot
             if slot_offset == 0:
                 content.append(f" {entry.issue_key}", style="bold")
                 content.append(f" {entry.issue_summary}")
             elif slot_offset == 1 and duration_slots >= 2:
-                # 恢復 1 小時 (2 slots) 即可顯示內容的邏輯，讓空間利用更好
                 if entry.comment_text:
                     content.append(f" {entry.comment_text}", style="italic")
 
@@ -149,12 +152,12 @@ class WorklogDayGrid(Static):
         started = entry.started
         if self._display_timezone is not None:
             started = started.astimezone(self._display_timezone)
-        return started_to_slot(started)
+        return self._scale.started_to_slot(started)
 
     def _entry_for_slot(self, slot: int) -> WorklogEntry | None:
         for entry in self.worklog_entries:
             start_slot = self._slot_index_for_entry(entry)
-            duration_slots = seconds_to_slots_ceil(entry.time_spent_seconds)
+            duration_slots = self._scale.seconds_to_slots_ceil(entry.time_spent_seconds)
             if start_slot <= slot < start_slot + duration_slots:
                 return entry
         return None
@@ -168,7 +171,7 @@ class WorklogDayGrid(Static):
 
     def _slot_from_y(self, y: int) -> int | None:
         content_y = y - self.gutter.top
-        if 0 <= content_y < SLOTS_PER_DAY:
+        if 0 <= content_y < self._scale.slots_per_day:
             return content_y
         return None
 
