@@ -315,7 +315,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
 
             grid = tab.query_one(WorklogDayGrid)
-            rendered = grid._render_slot_line(2, 80).plain
+            rendered = grid._render_slot_line(6, 80).plain
             self.assertIn('PROJ-1', rendered)
             self.assertIn('Alpha task', rendered)
 
@@ -332,7 +332,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         )
         grid = WorklogDayGrid()
         grid.set_worklog_entries([entry])
-        rendered = grid._render_slot_line(3, 80).plain.strip()
+        rendered = grid._render_slot_line(7, 80).plain.strip()
         self.assertEqual('▌ Focused implementation', rendered)
 
     def test_two_hour_worklog_second_line_shows_comment_text(self) -> None:
@@ -348,7 +348,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         )
         grid = WorklogDayGrid()
         grid.set_worklog_entries([entry])
-        rendered = grid._render_slot_line(3, 80).plain
+        rendered = grid._render_slot_line(7, 80).plain
         self.assertIn('Focused implementation', rendered)
 
     def test_existing_worklog_line_is_truncated_to_grid_width(self) -> None:
@@ -364,7 +364,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
         )
         grid = WorklogDayGrid()
         grid.set_worklog_entries([entry])
-        rendered = grid._render_slot_line(6, 24)
+        rendered = grid._render_slot_line(10, 24)
         self.assertLessEqual(rendered.cell_len, 24)
 
     def test_adjacent_existing_worklogs_use_different_card_styles(self) -> None:
@@ -423,11 +423,11 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             time_spent_seconds=3600,
             comment_text='',
         )
-        self.assertEqual(32, grid._slot_index_for_entry(entry))
+        self.assertEqual(36, grid._slot_index_for_entry(entry))
 
     def test_grid_time_axis_wraps_midnight_label_to_zero_hour(self) -> None:
         grid = WorklogDayGrid()
-        self.assertEqual('00:00 ', grid._render_time_axis_label(32).plain)
+        self.assertEqual('00:00 ', grid._render_time_axis_label(36).plain)
 
     def test_grid_slot_uses_display_timezone_for_entry_placement(self) -> None:
         grid = WorklogDayGrid()
@@ -441,7 +441,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             time_spent_seconds=3600,
             comment_text='',
         )
-        self.assertEqual(2, grid._slot_index_for_entry(entry))
+        self.assertEqual(6, grid._slot_index_for_entry(entry))
 
     def test_worklog_editor_time_axis_matches_worklog_view_format(self) -> None:
         modal = WorklogEditorModal(
@@ -452,9 +452,9 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             existing_entries=[],
         )
         labels = modal._build_axis_labels().splitlines()
-        self.assertEqual('08:00 ', labels[1])
+        self.assertEqual('06:00 ', labels[1])
         self.assertEqual('  --  ', labels[2])
-        self.assertEqual('09:00 ', labels[3])
+        self.assertEqual('07:00 ', labels[3])
 
     def test_worklog_editor_time_axis_extends_to_after_midnight(self) -> None:
         modal = WorklogEditorModal(
@@ -465,10 +465,10 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             existing_entries=[],
         )
         labels = modal._build_axis_labels().splitlines()
-        self.assertEqual(37, len(labels))
-        self.assertEqual('00:00 ', labels[33])
-        self.assertEqual('01:00 ', labels[35])
-        self.assertEqual('  --  ', labels[36])
+        self.assertEqual(45, len(labels))
+        self.assertEqual('00:00 ', labels[37])
+        self.assertEqual('03:00 ', labels[43])
+        self.assertEqual('  --  ', labels[44])
 
     async def test_worklog_grid_keeps_full_height_and_scrolls_on_short_terminal(self) -> None:
         async with self.app.run_test(size=(140, 20)) as pilot:
@@ -667,7 +667,7 @@ class WorklogTabTests(unittest.IsolatedAsyncioTestCase):
             tab.refresh_day()
             await pilot.pause()
 
-            await pilot.click('#worklog-day-grid', offset=(2, 3))
+            await pilot.click('#worklog-day-grid', offset=(2, 7))
             await pilot.pause()
 
             self.assertEqual('WorklogEditorModal', self.app.screen_stack[-1].__class__.__name__)

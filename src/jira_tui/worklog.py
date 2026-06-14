@@ -1,5 +1,6 @@
 """Worklog domain helpers."""
 
+import typing as t
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
@@ -8,13 +9,42 @@ from datetime import time
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
+from pydantic import model_validator
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
+
 from .models import JiraIssue
 from .models import JiraWorklog
 
 
-DAY_START_HOUR = 8
-DAY_END_HOUR = 26
-"""Exclusive grid end; values past 24 extend the logical day after midnight (26 = 02:00)."""
+class _GridConfig(BaseSettings):
+    """Worklog grid bounds, overridable via JIRA_ env vars / .env."""
+
+    model_config = SettingsConfigDict(
+        env_prefix='JIRA_',
+        env_file='.env',
+        env_file_encoding='utf-8',
+        extra='ignore',
+    )
+
+    worklog_day_start_hour: int = 6
+    worklog_day_end_hour: int = 28
+
+    @model_validator(mode='after')
+    def _check_grid_bounds(self) -> t.Self:
+        if not 0 <= self.worklog_day_start_hour <= 23:
+            raise ValueError('worklog_day_start_hour must be in 0..23')
+        # 跨午夜的格子靠把小時 +24 換算，終點最遠只能到隔日 24:00 (=48)
+        if not self.worklog_day_start_hour < self.worklog_day_end_hour <= 48:
+            raise ValueError('worklog_day_end_hour must be in (worklog_day_start_hour, 48]')
+        return self
+
+
+_grid_config = _GridConfig()
+
+DAY_START_HOUR = _grid_config.worklog_day_start_hour
+DAY_END_HOUR = _grid_config.worklog_day_end_hour
+"""Exclusive grid end; values past 24 extend the logical day after midnight (max 48 = next-day 24:00)."""
 SLOT_MINUTES = 30
 SLOT_SECONDS = SLOT_MINUTES * 60
 SLOTS_PER_DAY = (DAY_END_HOUR - DAY_START_HOUR) * 60 // SLOT_MINUTES
