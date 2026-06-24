@@ -1,3 +1,5 @@
+> # See https://jira-key.vercel.app/ 
+
 # Jira TUI
 
 使用 [Textual](https://textual.textualize.io/) 框架打造的終端機 Jira 儀表板，支援 Issue 瀏覽、編輯與時間軸視覺化。
