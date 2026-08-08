@@ -270,7 +270,7 @@ WorklogEditorModal {
 
 #worklog-editor-dialog {
     width: 120;
-    height: 46;
+    height: 54;
     max-height: 100%;
     padding: 1 2;
     background: $surface;

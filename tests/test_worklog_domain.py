@@ -51,8 +51,8 @@ class WorklogDomainTests(unittest.TestCase):
             tz,
         )
 
-        self.assertEqual(datetime(2026, 4, 9, 9, 0, tzinfo=tz), start_at)
-        self.assertEqual(datetime(2026, 4, 9, 10, 30, tzinfo=tz), end_at)
+        self.assertEqual(datetime(2026, 4, 9, 7, 0, tzinfo=tz), start_at)
+        self.assertEqual(datetime(2026, 4, 9, 8, 30, tzinfo=tz), end_at)
 
     def test_selection_to_seconds_returns_thirty_minute_units(self) -> None:
         self.assertEqual(90 * 60, selection_to_seconds(1, 4))
@@ -63,7 +63,7 @@ class WorklogDomainTests(unittest.TestCase):
             datetime(2026, 4, 9, 9, 0, tzinfo=tz),
             45 * 60,
         )
-        self.assertEqual((2, 4), (start_slot, end_slot))
+        self.assertEqual((6, 8), (start_slot, end_slot))
 
     def test_datetime_to_slot_range_maps_after_midnight_to_late_night_slots(self) -> None:
         tz = ZoneInfo('Asia/Taipei')
@@ -71,7 +71,7 @@ class WorklogDomainTests(unittest.TestCase):
             datetime(2026, 4, 10, 0, 30, tzinfo=tz),
             30 * 60,
         )
-        self.assertEqual((33, 34), (start_slot, end_slot))
+        self.assertEqual((37, 38), (start_slot, end_slot))
 
     def test_seconds_to_slots_ceil_rounds_15_and_29_minutes_to_single_slot(self) -> None:
         self.assertEqual(1, seconds_to_slots_ceil(15 * 60))
